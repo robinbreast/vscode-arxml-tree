@@ -1,0 +1,131 @@
+{
+  "name": "vscode-arxml-tree",
+  "displayName": "vscode-arxml-tree",
+  "description": "Show ARXML tree structure",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.87.0"
+  },
+  "keywords": [
+    "arxml",
+    "tree"
+  ],
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "publisher": "robinbreast",
+  "license": "MIT",
+  "author": {
+    "name": "Kihoa Nam",
+    "email": "robinbreast1412@gmail.com"
+  },
+  "homepage": "https://github.com/robinbreast/vscode-arxml-tree/blob/main/README.md",
+  "repository": {
+    "type": "git",
+    "uri": "https://github.com/robinbreast/vscode-arxml-tree.git"
+  },
+  "bugs": {
+    "url": "https://github.com/robinbreast/vscode-arxml-tree/issues",
+    "email": "robinbreast1412@gmail.com"
+  },
+  "icon": "resources/images/arxml-tree-icon.png",
+  "activationEvents": [
+    "onLanguage:arxml"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "arxml-tree",
+          "title": "ARXML Tree View",
+          "icon": "resources/images/arxml-tree-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "arxml-tree": [
+        {
+          "id": "arxml-tree-view",
+          "name": "Tree"
+        },
+        {
+          "id": "bookmark-tree-view",
+          "name": "Bookmarks"
+        }
+      ]
+    },
+    "languages": [
+      {
+        "id": "arxml",
+        "extensions": [
+          ".arxml"
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "command": "arxml-tree-view.refresh",
+        "title": "ARTree: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "arxml-tree-view.revealInFile",
+        "title": "ARTree: Reveal in file"
+      },
+      {
+        "command": "arxml-tree-view.addBookmark",
+        "title": "ARTree: Add bookmark"
+      },
+      {
+        "command": "arxml-tree-view.gotoNode",
+        "title": "ARTree: Goto node"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "arxml-tree-view.refresh",
+          "when": "view == arxml-tree-view",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "arxml-tree-view.addBookmark",
+          "when": "view == arxml-tree-view"
+        }
+      ]
+    }
+  },
+  "main": "./out/extension.js",
+  "scripts": {
+    "vscode:prepublish": "npm run esbuild-base -- --minify",
+    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=out/extension.js --external:vscode --format=cjs --platform=node --target=es2020",
+    "esbuild": "npm run esbuild-base -- --sourcemap",
+    "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
+    "tset-compile": "tsc -p ./",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.6",
+    "@types/node": "18.x",
+    "@types/vscode": "^1.87.0",
+    "@types/xml2js": "^0.4.14",
+    "@typescript-eslint/eslint-plugin": "^7.4.0",
+    "@typescript-eslint/parser": "^7.4.0",
+    "@vscode/test-cli": "^0.0.8",
+    "@vscode/test-electron": "^2.3.9",
+    "eslint": "^8.57.0",
+    "fast-xml-parser": "^4.3.6",
+    "typescript": "^5.3.3",
+    "xpath": "^0.0.34"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^4.3.6"
+  }
+}
