@@ -39,8 +39,10 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode> {
   private _onDidChangeTreeData: vscode.EventEmitter<ArxmlNode | undefined | void> = new vscode.EventEmitter<ArxmlNode | undefined | void>();
   readonly onDidChangeTreeData: vscode.Event<ArxmlNode | undefined | void> = this._onDidChangeTreeData.event;
 
-  private arxmlDocument: string = '';
+  private arxmlDocument: string | undefined;
   private rootNode: ArxmlNode | undefined;
+  private parser: fastXmlParser.XMLParser | undefined;
+  private elementPositionMap: Map<string, number> = new Map();
 
   constructor() {
     vscode.workspace.onDidChangeTextDocument(this.onDidChangeTextDocument, this);
@@ -67,19 +69,31 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode> {
     }
   }
 
-  private getElementPosition(name: string, uuid: string | undefined): number {
-    let uuid_pattern = '';
-    if (uuid) {
-      uuid_pattern = 'UUID="' + uuid + '">[.\\s\\S]*';
-    }
-    const pattern = uuid_pattern + '<SHORT-NAME>' + name + '<\/SHORT-NAME>';
-    const regex = new RegExp(pattern, 'g');
-    const matches = this.arxmlDocument.match(regex);
+  private preprocessDocument(): void {
+    const lines = this.arxmlDocument?.split('\n') || [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const nameMatch = line.match(/<SHORT-NAME>(.*?)<\/SHORT-NAME>/);
+      const uuidMatch = line.match(/UUID="(.*?)"/);
 
-    if (matches) {
-      const matchIndex = this.arxmlDocument.indexOf(matches[0]);
-      const linesBeforeMatch = this.arxmlDocument.substring(0, matchIndex).split('\n');
-      return linesBeforeMatch.length;
+      if (nameMatch) {
+        const name = nameMatch[1];
+        this.elementPositionMap.set(name, i);
+      }
+
+      if (uuidMatch) {
+        const uuid = uuidMatch[1];
+        this.elementPositionMap.set(uuid, i);
+      }
+    }
+  }
+
+  private getElementPosition(name: string, uuid: string | undefined): number {
+    if (uuid && this.elementPositionMap.has(uuid)) {
+      return this.elementPositionMap.get(uuid) || 0;
+    }
+    if (this.elementPositionMap.has(name)) {
+      return this.elementPositionMap.get(name) || 0;
     }
     return 0;
   }
@@ -150,12 +164,18 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode> {
       return undefined;
     }
 
-    const options = {
-      ignoreAttributes: false,
-      attributeNamePrefix: '@',
-    };
-    const parser = new fastXmlParser.XMLParser(options);
-    const parsedXml = parser.parse(this.arxmlDocument);
+    if (!this.parser) {
+      const options = {
+        ignoreAttributes: false,
+        attributeNamePrefix: '@',
+      };
+      this.parser = new fastXmlParser.XMLParser(options);
+    }
+
+    // Preprocess the document to create the element position map
+    this.preprocessDocument();
+
+    const parsedXml = this.parser.parse(this.arxmlDocument);
 
     const rootNode: ArxmlNode = {
       name: '/',
@@ -204,7 +224,6 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode> {
 
     return rootNode;
   }
-
 }
 
 export class BookmarkTreeProvider implements vscode.TreeDataProvider<ArxmlNode> {
@@ -232,7 +251,7 @@ export class BookmarkTreeProvider implements vscode.TreeDataProvider<ArxmlNode> 
   }
 
   addBookmark(node: ArxmlNode) {
-    if (!this.bookmarks.some(item => equalsArxmlNodes(item,node))) {
+    if (!this.bookmarks.some(item => equalsArxmlNodes(item, node))) {
       this.bookmarks.push(node);
     }
   }
