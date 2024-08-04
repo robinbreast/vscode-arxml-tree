@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ArxmlTreeProvider, ArxmlNode, BookmarkTreeProvider, ArxmlNodeInfo } from './treeProvider';
+import { ArxmlTreeProvider, ArxmlNode, BookmarkTreeProvider } from './treeProvider';
 import { ArxmlHoverProvider } from './hoverProvider';
 
 let treeView: vscode.TreeView<ArxmlNode>;
@@ -49,13 +49,14 @@ export function activate(context: vscode.ExtensionContext) {
   }));
 
   // Handle selecting bookmark command
-  context.subscriptions.push(vscode.commands.registerCommand('arxml-tree-view.gotoNode', async (node: ArxmlNodeInfo) => {
-    await revealPosition(vscode.Uri.parse(node.filepath), node.lineNumber);
-    // find node to select in tree view
-    const treeNode = arxmlTreeProvider.findNodeWithInfo(node);
-    if (treeNode) {
+  context.subscriptions.push(vscode.commands.registerCommand('arxml-tree-view.gotoNode', async (arpath: string) => {
+    const node = await arxmlTreeProvider.findNodeWithArPath(arpath);
+    if (node) {
+      await revealPosition(node.file, node.lineNumber);
       // reveal node in tree view
-      treeView.reveal(treeNode, { select: true, focus: true, expand: true });
+      treeView.reveal(node, { select: true, focus: true, expand: true });
+    } else {
+      vscode.window.showInformationMessage(`Node with ARPath ${arpath} not found`);
     }
   }));
 

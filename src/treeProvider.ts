@@ -10,22 +10,6 @@ export interface ArxmlNode {
   children: ArxmlNode[];
 }
 
-export interface ArxmlNodeInfo {
-  name: string;
-  filepath: string;
-  lineNumber: number;
-  uuid: string;
-}
-
-export function getArxmlNodeInfo(node: ArxmlNode): ArxmlNodeInfo {
-  return {
-    name: node.name,
-    filepath: node.file.fsPath,
-    lineNumber: node.lineNumber,
-    uuid: node.uuid ?? "",
-  };
-}
-
 // Utility function for comparison
 export function equalsArxmlNodes(node1: ArxmlNode, node2: ArxmlNode): boolean {
   return (
@@ -138,17 +122,34 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode> {
     return undefined;
   }
 
-  findNodeWithInfo(node: ArxmlNodeInfo): ArxmlNode | undefined {
-    return this.findNode(
-      {
-        name: node.name,
-        file: vscode.Uri.parse(node.filepath),
-        lineNumber: node.lineNumber,
-        uuid: node.uuid,
-        parent: undefined,
-        children: [],
+  // Function to find the node corresponding to the link text (PATH)
+  async findNodeWithArPath(targetLabel: string): Promise<ArxmlNode | undefined> {
+    // Get the root node from the tree provider
+    const rootNode = await this.getRootNode();
+
+    if (!rootNode) {
+      return undefined; // No root node found
+    }
+
+    // Split the target label by '/' to get the node labels
+    const labels = targetLabel.split('/').filter(label => label.trim() !== '');
+
+    let currentNode = rootNode;
+    if (currentNode) {
+      for (const label of labels) {
+        if (!currentNode.children) {
+          return undefined; // No children nodes found for the current node
+        }
+        // Find the child node with the matching label
+        const foundNode = currentNode.children.find(node => node.name === label);
+        if (!foundNode) {
+          return undefined; // Child node with the given label not found
+        }
+        currentNode = foundNode; // Move to the next level
       }
-    );
+    }
+
+    return currentNode;
   }
 
   private async buildArxmlTree(): Promise<ArxmlNode | undefined> {
