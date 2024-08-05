@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 
 export interface ArxmlNode {
   name: string;
+  arpath: string;
   element: string;
   file: vscode.Uri;
   range: vscode.Range;
@@ -25,6 +26,7 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode> {
 
   private arxmlDocument: string | undefined;
   private rootNode: ArxmlNode | undefined;
+  private lastHighlightedNode: ArxmlNode | undefined;
 
   constructor() {
     vscode.workspace.onDidChangeTextDocument(this.onDidChangeTextDocument, this);
@@ -48,23 +50,18 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode> {
   private onDidChangeTextDocument(event: vscode.TextDocumentChangeEvent): void {
     if (event.document.uri.fsPath.endsWith('.arxml')) {
       this.arxmlDocument = event.document.getText();
-      this.currentHighlightRange = undefined;
-      this.lastClickTime = 0;
       this.refresh();
     }
   }
 
-  private lastClickTime: number = 0;
-  private currentHighlightRange: vscode.Range | undefined;
   private readonly highlightType: vscode.TextEditorDecorationType = vscode.window.createTextEditorDecorationType({
-    backgroundColor: 'rgba(0, 0, 255, 0.2)',
+    backgroundColor: 'rgba(0, 200, 0, 0.2)',
   });
 
   private onDidChangeTextEditorSelection(event: vscode.TextEditorSelectionChangeEvent): void {
     const editor = event.textEditor;
-    if (editor.document.languageId === 'arxml') {
+    if (editor.document.languageId === 'arxml' && event.kind === vscode.TextEditorSelectionChangeKind.Mouse) {
       const lineNumber = event.selections[0].active.line + 1; // Line numbers are 0-based, so add 1
-
       // Check if the current line is within the range of any tree node
       this.getRootNode().then(rootNode => {
         if (rootNode) {
@@ -80,38 +77,32 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode> {
             }
             stack.push(...currentNode.children);
           }
-          if (closestNode) {
+          if (closestNode && closestNode !== this.lastHighlightedNode) {
             // Send the 'focusNode' command with the closest node as an argument
             vscode.commands.executeCommand('arxml-tree-view.focusNode', closestNode);
-
-            // Check for double-click
-            const currentTime = new Date().getTime();
-            //if (this.lastClickTime !== 0 && currentTime - this.lastClickTime < 1000) { // 1s threshold for double-click
-              editor.setDecorations(this.highlightType, [closestNode.range]);
-              this.lastClickTime = 0;
-           // }
-            this.lastClickTime = currentTime;
+            editor.setDecorations(this.highlightType, [closestNode.range]);
+            this.lastHighlightedNode = closestNode;
           }
         }
       });
     }
   }
 
-  getTreeItem(element: ArxmlNode): vscode.TreeItem {
+  getTreeItem(node: ArxmlNode): vscode.TreeItem {
     return {
-      label: element.name,
-      collapsibleState: element.children.length > 0 ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
-      tooltip: `UUID: ${element.uuid}\nLine: ${element.range.start.line + 1} ~ ${element.range.end.line + 1}`
+      label: node.name,
+      collapsibleState: node.children.length > 0 ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
+      tooltip: `ARPATH: ${node.arpath}\nUUID: ${node.uuid}\nLine: ${node.range.start.line + 1} ~ ${node.range.end.line + 1}`
     };
   }
 
-  getParent(element: ArxmlNode): ArxmlNode | undefined {
-    return element.parent;
+  getParent(node: ArxmlNode): ArxmlNode | undefined {
+    return node.parent;
   }
 
-  getChildren(element?: ArxmlNode): Thenable<ArxmlNode[]> {
-    if (element && element.children) {
-      return Promise.resolve(element.children);
+  getChildren(node?: ArxmlNode): Thenable<ArxmlNode[]> {
+    if (node && node.children) {
+      return Promise.resolve(node.children);
     } else {
       return this.getRootNode().then(rootNode => rootNode ? rootNode.children : []);
     }
@@ -196,6 +187,7 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode> {
 
     const rootNode: ArxmlNode = {
       name: '/',
+      arpath: '',
       element: 'AUTOSAR',
       file: editor.document.uri,
       range: new vscode.Range(new vscode.Position(0, 0), new vscode.Position(this.arxmlDocument.length, 0)),
@@ -218,6 +210,7 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode> {
           const start = new vscode.Position(lineNumber - 1, 0);
           const childNode: ArxmlNode = {
             name: match.groups.value,
+            arpath: `${currentNode.arpath}/${match.groups.value}`,
             element: '',
             file: editor.document.uri,
             range: new vscode.Range(start, start),
@@ -259,7 +252,7 @@ export class BookmarkTreeProvider implements vscode.TreeDataProvider<ArxmlNode> 
   getTreeItem(node: ArxmlNode): vscode.TreeItem {
     return {
       label: node.name,
-      tooltip: `UUID: ${node.uuid}\nLine: ${node.range.start.line + 1} ~ ${node.range.end.line + 1}`
+      tooltip: `ARPATH: ${node.arpath}\nUUID: ${node.uuid}\nLine: ${node.range.start.line + 1} ~ ${node.range.end.line + 1}`
     };
   }
 
