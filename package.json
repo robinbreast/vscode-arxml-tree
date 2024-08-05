@@ -74,6 +74,10 @@
         "title": "ARTree: Reveal in file"
       },
       {
+        "command": "arxml-tree-view.focusNode",
+        "title": "ARTree: Focus node"
+      },
+      {
         "command": "arxml-tree-view.addBookmark",
         "title": "ARTree: Add bookmark"
       },
@@ -121,11 +125,7 @@
     "@vscode/test-cli": "^0.0.8",
     "@vscode/test-electron": "^2.3.9",
     "eslint": "^8.57.0",
-    "fast-xml-parser": "^4.3.6",
     "typescript": "^5.3.3",
     "xpath": "^0.0.34"
-  },
-  "dependencies": {
-    "fast-xml-parser": "^4.3.6"
   }
 }

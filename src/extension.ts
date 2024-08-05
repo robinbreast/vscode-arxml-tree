@@ -31,12 +31,22 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.commands.registerCommand('arxml-tree-view.refresh', () => arxmlTreeProvider.refresh()));
   context.subscriptions.push(vscode.commands.registerCommand('arxml-tree-view.revealInFile', async (node: ArxmlNode) => {
     if (node) {
-      await revealPosition(node.file, node.lineNumber);
+      await revealPosition(node.file, node.range);
       // find node to select in tree view
       const treeNode = arxmlTreeProvider.findNode(node);
       if (treeNode) {
         // reveal node in tree view
         treeView.reveal(treeNode, { select: true, focus: true, expand: true });
+      }
+    }
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand('arxml-tree-view.focusNode', async (node: ArxmlNode) => {
+    if (node) {
+      // find node to select in tree view
+      const treeNode = arxmlTreeProvider.findNode(node);
+      if (treeNode) {
+        // reveal node in tree view
+        treeView.reveal(treeNode, { select: false, focus: true, expand: true });
       }
     }
   }));
@@ -52,7 +62,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.commands.registerCommand('arxml-tree-view.gotoNode', async (arpath: string) => {
     const node = await arxmlTreeProvider.findNodeWithArPath(arpath);
     if (node) {
-      await revealPosition(node.file, node.lineNumber);
+      await revealPosition(node.file, node.range);
       // reveal node in tree view
       treeView.reveal(node, { select: true, focus: true, expand: true });
     } else {
@@ -77,21 +87,11 @@ export function activate(context: vscode.ExtensionContext) {
 
 }
 
-async function revealPosition(uri: vscode.Uri, lineNumber: number, highlightColor: string = 'rgba(0, 0, 255, 0.2)'): Promise<void> {
+async function revealPosition(uri: vscode.Uri, range: vscode.Range, highlightColor: string = 'rgba(0, 0, 255, 0.2)'): Promise<void> {
   let document: vscode.TextDocument | undefined = vscode.workspace.textDocuments.find(doc => doc.uri.toString() === uri.toString());
 
   if (!document) {
     document = await vscode.workspace.openTextDocument(uri);
   }
-
-  const position = new vscode.Position(lineNumber, 0);
-  await vscode.window.showTextDocument(document, { selection: new vscode.Range(position, position), preview: false });
-
-  // Highlight the entire line using a decoration
-  const line = document.lineAt(lineNumber);
-  const range = new vscode.Range(line.range.start, line.range.end);
-  const decorationType = vscode.window.createTextEditorDecorationType({
-    backgroundColor: highlightColor,
-  });
-  vscode.window.activeTextEditor?.setDecorations(decorationType, [range]);
+  await vscode.window.showTextDocument(document, { selection: range, preview: false });
 }
