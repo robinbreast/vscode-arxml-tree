@@ -6,8 +6,7 @@ This extension helps you to navigate arxml files with AR Node tree.
 - Add `Bookmarks` from tree view; no deletion and backup feature for now
 - `Hover link` over `REF DEST` elements in editor
 
-![Demo](https://github.com/robinbreast/vscode-arxml-tree/blob/main/resources/images/arxml-tree-demo.mp4?raw=true)
-
+![Demo](https://github.com/robinbreast/vscode-arxml-tree/blob/main/resources/images/arxml-tree-demo.gif?raw=true)
 
 # Known issues
 - Bookmarks are volatile; not saved
