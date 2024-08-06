@@ -2,13 +2,13 @@ import * as vscode from 'vscode';
 import { ArxmlTreeProvider, ArxmlNode, BookmarkTreeProvider } from './treeProvider';
 import { ArxmlHoverProvider } from './hoverProvider';
 
-let treeView: vscode.TreeView<ArxmlNode>;
-const arxmlTreeProvider = new ArxmlTreeProvider();
-let bookmarkTreeView: vscode.TreeView<ArxmlNode>; // Rename bookmarkView to bookmarkTreeView to avoid confusion
-const bookmarkTreeProvider = new BookmarkTreeProvider();
-const hoverProvider = new ArxmlHoverProvider(arxmlTreeProvider);
-
 export function activate(context: vscode.ExtensionContext) {
+  let treeView: vscode.TreeView<ArxmlNode>;
+  const arxmlTreeProvider = new ArxmlTreeProvider();
+  let bookmarkTreeView: vscode.TreeView<ArxmlNode>; // Rename bookmarkView to bookmarkTreeView to avoid confusion
+  const bookmarkTreeProvider = new BookmarkTreeProvider();
+  const hoverProvider = new ArxmlHoverProvider(arxmlTreeProvider);
+
   treeView = vscode.window.createTreeView('arxml-tree-view', { treeDataProvider: arxmlTreeProvider });
   bookmarkTreeView = vscode.window.createTreeView('bookmark-tree-view', { treeDataProvider: bookmarkTreeProvider });
 

@@ -92,7 +92,7 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode> {
     return {
       label: node.name,
       collapsibleState: node.children.length > 0 ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
-      tooltip: `ARPATH: ${node.arpath}\nUUID: ${node.uuid}\nLine: ${node.range.start.line + 1} ~ ${node.range.end.line + 1}`
+      tooltip: `ELEMENT: ${node.element}\nARPATH: ${node.arpath}\nUUID: ${node.uuid}\nFile: ${node.file.fsPath}\nLine: ${node.range.start.line + 1} ~ ${node.range.end.line + 1}`
     };
   }
 
@@ -185,11 +185,13 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode> {
       }
     }
 
+    const fileUri = editor.document.uri;
+
     const rootNode: ArxmlNode = {
       name: '/',
       arpath: '',
       element: 'AUTOSAR',
-      file: editor.document.uri,
+      file: fileUri,
       range: new vscode.Range(new vscode.Position(0, 0), new vscode.Position(this.arxmlDocument.length, 0)),
       uuid: undefined,
       parent: undefined,
@@ -212,7 +214,7 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode> {
             name: match.groups.value,
             arpath: `${currentNode.arpath}/${match.groups.value}`,
             element: '',
-            file: editor.document.uri,
+            file: fileUri,
             range: new vscode.Range(start, start),
             uuid: undefined,
             parent: currentNode,
@@ -252,7 +254,7 @@ export class BookmarkTreeProvider implements vscode.TreeDataProvider<ArxmlNode> 
   getTreeItem(node: ArxmlNode): vscode.TreeItem {
     return {
       label: node.name,
-      tooltip: `ARPATH: ${node.arpath}\nUUID: ${node.uuid}\nLine: ${node.range.start.line + 1} ~ ${node.range.end.line + 1}`
+      tooltip: `ELEMENT: ${node.element}\nARPATH: ${node.arpath}\nUUID: ${node.uuid}\nFile: ${node.file.fsPath}\nLine: ${node.range.start.line + 1} ~ ${node.range.end.line + 1}`
     };
   }
 
