@@ -2,7 +2,7 @@
   "name": "vscode-arxml-tree",
   "displayName": "vscode-arxml-tree",
   "description": "Show ARXML tree structure",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "engines": {
     "vscode": "^1.87.0"
   },
@@ -60,7 +60,15 @@
         "id": "arxml",
         "extensions": [
           ".arxml"
-        ]
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "arxml",
+        "scopeName": "text.xml.arxml",
+        "path": "./syntaxes/arxml.tmLanguage.json"
       }
     ],
     "commands": [
@@ -124,6 +132,7 @@
     "@typescript-eslint/parser": "^7.4.0",
     "@vscode/test-cli": "^0.0.8",
     "@vscode/test-electron": "^2.3.9",
+    "esbuild": "^0.24.2",
     "eslint": "^8.57.0",
     "typescript": "^5.3.3",
     "xpath": "^0.0.34"

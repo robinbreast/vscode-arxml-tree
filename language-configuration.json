@@ -1,0 +1,44 @@
+{
+  "comments": {
+    "blockComment": ["<!--", "-->"]
+  },
+  "brackets": [
+    ["<", ">"],
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"]
+  ],
+  "autoClosingPairs": [
+    { "open": "<", "close": ">" },
+    { "open": "{", "close": "}" },
+    { "open": "[", "close": "]" },
+    { "open": "(", "close": ")" },
+    { "open": "\"", "close": "\"" },
+    { "open": "'", "close": "'" },
+    { "open": "<!--", "close": "-->" },
+    { "open": "<![CDATA[", "close": "]]>" }
+  ],
+  "surroundingPairs": [
+    { "open": "<", "close": ">" },
+    { "open": "{", "close": "}" },
+    { "open": "[", "close": "]" },
+    { "open": "(", "close": ")" },
+    { "open": "\"", "close": "\"" },
+    { "open": "'", "close": "'" }
+  ],
+  "onEnterRules": [
+    {
+      "beforeText": "<(?!\\?|\\!)([a-zA-Z0-9_\\-:]+)([^/>]*(?!/)>)[^<]*$",
+      "afterText": "^</([a-zA-Z0-9_\\-:]+)>",
+      "action": {
+        "indentAction": "IndentOutdent"
+      }
+    },
+    {
+      "beforeText": "<(?!\\?|\\!)([a-zA-Z0-9_\\-:]+)([^/>]*(?!/)>)[^<]*$",
+      "action": {
+        "indentAction": "Indent"
+      }
+    }
+  ]
+}

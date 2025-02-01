@@ -1,5 +1,8 @@
 # Change Log
 
+## [0.1.2]
+- Apply xml syntax highlighting
+
 ## [0.1.1]
 
 - Improve performance with big size arxml file

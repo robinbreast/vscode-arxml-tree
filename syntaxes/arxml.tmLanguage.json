@@ -1,0 +1,8 @@
+{
+  "scopeName": "text.xml.arxml",
+  "patterns": [
+    {
+      "include": "text.xml"
+    }
+  ]
+}
