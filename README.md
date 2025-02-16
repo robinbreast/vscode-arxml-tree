@@ -8,5 +8,5 @@ This extension helps you to navigate arxml files with AR Node tree.
 
 ![Demo](https://github.com/robinbreast/vscode-arxml-tree/blob/main/resources/images/arxml-tree-demo.gif?raw=true)
 
-# Known issues
+# Limitation
 - Bookmarks are volatile; not saved
