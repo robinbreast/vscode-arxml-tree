@@ -1,29 +1,32 @@
 import * as vscode from 'vscode';
-import { ArxmlTreeProvider, ArxmlNode, BookmarkTreeProvider } from './treeProvider';
+import { ArxmlTreeProvider, BookmarkTreeProvider } from './treeProvider';
+import { ArxmlNode } from './arxmlNode';
 import { ArxmlHoverProvider } from './hoverProvider';
 
 export function activate(context: vscode.ExtensionContext) {
   let treeView: vscode.TreeView<ArxmlNode>;
   const arxmlTreeProvider = new ArxmlTreeProvider();
-  let bookmarkTreeView: vscode.TreeView<ArxmlNode>; // Rename bookmarkView to bookmarkTreeView to avoid confusion
-  const bookmarkTreeProvider = new BookmarkTreeProvider();
+  context.subscriptions.push(arxmlTreeProvider);
+  let bookmarkTreeView: vscode.TreeView<ArxmlNode>;
+  const bookmarkTreeProvider = new BookmarkTreeProvider(context.workspaceState);
   const hoverProvider = new ArxmlHoverProvider(arxmlTreeProvider);
 
   treeView = vscode.window.createTreeView('arxml-tree-view', { treeDataProvider: arxmlTreeProvider });
   bookmarkTreeView = vscode.window.createTreeView('bookmark-tree-view', { treeDataProvider: bookmarkTreeProvider });
+  context.subscriptions.push(treeView, bookmarkTreeView);
 
-  treeView.onDidChangeSelection((event) => {
+  context.subscriptions.push(treeView.onDidChangeSelection((event) => {
     const selectedItem = event.selection[0];
     if (selectedItem) {
       vscode.commands.executeCommand("arxml-tree-view.revealInFile", selectedItem);
     }
-  });
-  bookmarkTreeView.onDidChangeSelection((event) => {
+  }));
+  context.subscriptions.push(bookmarkTreeView.onDidChangeSelection((event) => {
     const selectedItem = event.selection[0];
     if (selectedItem) {
       vscode.commands.executeCommand("arxml-tree-view.revealInFile", selectedItem);
     }
-  });
+  }));
 
   // register hover provider
   context.subscriptions.push(vscode.languages.registerHoverProvider('arxml', hoverProvider));
@@ -54,7 +57,11 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.commands.registerCommand('arxml-tree-view.addBookmark', (node: ArxmlNode) => {
     if (node) {
       bookmarkTreeProvider.addBookmark(node);
-      bookmarkTreeProvider.refresh();
+    }
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand('arxml-tree-view.removeBookmark', (node: ArxmlNode) => {
+    if (node) {
+      bookmarkTreeProvider.removeBookmark(node);
     }
   }));
 
@@ -71,23 +78,10 @@ export function activate(context: vscode.ExtensionContext) {
   }));
 
   // Register event listeners for file changes and editor activations
-  vscode.window.onDidChangeActiveTextEditor((editor) => {
-    if (editor && editor.document.languageId === 'arxml') {
-      arxmlTreeProvider.refresh();
-      bookmarkTreeProvider.refresh();
-    }
-  });
-
-  vscode.workspace.onDidChangeTextDocument((event) => {
-    if (event.document.languageId === 'arxml') {
-      arxmlTreeProvider.refresh();
-      bookmarkTreeProvider.refresh();
-    }
-  });
-
+  // handled inside providers
 }
 
-async function revealPosition(uri: vscode.Uri, range: vscode.Range, highlightColor: string = 'rgba(0, 0, 255, 0.2)'): Promise<void> {
+async function revealPosition(uri: vscode.Uri, range: vscode.Range): Promise<void> {
   let document: vscode.TextDocument | undefined = vscode.workspace.textDocuments.find(doc => doc.uri.toString() === uri.toString());
 
   if (!document) {
