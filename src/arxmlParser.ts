@@ -3,6 +3,7 @@ import { parser as saxParser, QualifiedTag } from 'sax';
 import { ArxmlNode } from './arxmlNode';
 
 const SHORT_NAME_TAG = 'SHORT-NAME';
+const INVALID_XML_CHARS = /[^\u0009\u000A\u000D\u0020-\uD7FF\uE000-\uFFFD]/g;
 const CHUNK_SIZE = 64_000;
 
 interface ElementFrame {
@@ -13,10 +14,17 @@ interface ElementFrame {
   shortName?: string;
 }
 
+interface ParseOptions {
+  strict?: boolean;
+  nameTags?: string[];
+  nameTextTags?: string[];
+}
+
 export async function parseArxmlDocument(
   text: string,
   uri: vscode.Uri,
-  positionAt: (offset: number) => vscode.Position
+  positionAt: (offset: number) => vscode.Position,
+  options: ParseOptions = {}
 ): Promise<ArxmlNode | undefined> {
   if (!text || !text.trim()) {
     return undefined;
@@ -32,10 +40,13 @@ export async function parseArxmlDocument(
     children: []
   };
 
-  const parser = saxParser(true, { trim: false, normalize: false, position: true });
+  const parseText = sanitizeXmlText(text);
+  const parser = saxParser(options.strict ?? true, { trim: false, normalize: false, position: true });
   const elementStack: ElementFrame[] = [];
   const arNodeStack: ArxmlNode[] = [rootNode];
   let parseError: Error | undefined;
+  const nameTags = new Set(options.nameTags ?? [SHORT_NAME_TAG]);
+  const nameTextTags = new Set(options.nameTextTags ?? []);
 
   parser.onerror = (err) => {
     parseError = err;
@@ -58,8 +69,16 @@ export async function parseArxmlDocument(
       return;
     }
 
-    if (frame.tag === SHORT_NAME_TAG) {
+    if (nameTags.has(frame.tag)) {
       frame.shortName = (frame.shortName ?? '') + value;
+      return;
+    }
+
+    if (nameTextTags.size > 0 && nameTextTags.has(frame.tag)) {
+      const parentFrame = elementStack[elementStack.length - 2];
+      if (parentFrame && nameTags.has(parentFrame.tag)) {
+        parentFrame.shortName = (parentFrame.shortName ?? '') + value;
+      }
     }
   };
 
@@ -69,7 +88,7 @@ export async function parseArxmlDocument(
       return;
     }
 
-    if (frame.tag === SHORT_NAME_TAG) {
+    if (nameTags.has(frame.tag)) {
       const parentFrame = elementStack[elementStack.length - 1];
       if (parentFrame) {
         parentFrame.shortName = frame.shortName?.trim() ?? '';
@@ -79,7 +98,7 @@ export async function parseArxmlDocument(
     }
 
     if (frame.node) {
-      const end = clampOffset(text, parser.position);
+      const end = clampOffset(parseText, parser.position);
       frame.node.range = new vscode.Range(frame.node.range.start, positionAt(end));
       if (arNodeStack[arNodeStack.length - 1] === frame.node) {
         arNodeStack.pop();
@@ -87,13 +106,13 @@ export async function parseArxmlDocument(
     }
   };
 
-  await streamParse(parser, text);
+  await streamParse(parser, parseText);
 
   if (parseError) {
     throw parseError;
   }
 
-  rootNode.range = new vscode.Range(new vscode.Position(0, 0), positionAt(text.length));
+  rootNode.range = new vscode.Range(new vscode.Position(0, 0), positionAt(parseText.length));
   return rootNode;
 
   function createNodeForFrame(frame: ElementFrame) {
@@ -107,7 +126,7 @@ export async function parseArxmlDocument(
     }
 
     const parentNode = arNodeStack[arNodeStack.length - 1];
-    const start = clampOffset(text, frame.startOffset);
+    const start = clampOffset(parseText, frame.startOffset);
     const node: ArxmlNode = {
       name: trimmed,
       arpath: `${parentNode.arpath}/${trimmed}`,
@@ -123,6 +142,13 @@ export async function parseArxmlDocument(
     frame.node = node;
     arNodeStack.push(node);
   }
+}
+
+function sanitizeXmlText(value: string): string {
+  if (!value) {
+    return value;
+  }
+  return value.replace(INVALID_XML_CHARS, ' ');
 }
 
 async function streamParse(parser: ReturnType<typeof saxParser>, text: string): Promise<void> {

@@ -9,6 +9,7 @@ Use this skill when working on workflows or commands for this repo's VS Code ext
 Key files
 - `package.json` for scripts, activation events, and contributions.
 - `src/extension.ts` for activation and command wiring.
+- `src/integratedTreeProvider.ts` for Filter/View controls tree UI.
 - `README.md` for user-visible docs and command lists.
 
 Commands

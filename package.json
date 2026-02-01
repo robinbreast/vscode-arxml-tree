@@ -2,7 +2,7 @@
   "name": "vscode-arxml-tree",
   "displayName": "vscode-arxml-tree",
   "description": "Show ARXML tree structure with cross-file navigation",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "engines": {
     "vscode": "^1.87.0"
   },
@@ -46,8 +46,9 @@
     "views": {
       "arxml-tree": [
         {
-          "id": "arxml-tree-view",
-          "name": "Tree"
+          "id": "arxml-integrated-view",
+          "name": "ARXML Explorer",
+          "contextualTitle": "ARXML Explorer"
         },
         {
           "id": "bookmark-tree-view",
@@ -78,6 +79,10 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "arxml-tree-view.clearCustomView",
+        "title": "ARTree: Clear custom view"
+      },
+      {
         "command": "arxml-tree-view.revealInFile",
         "title": "ARTree: Reveal in file"
       },
@@ -90,6 +95,24 @@
         "title": "ARTree: Add bookmark"
       },
       {
+        "command": "arxml-tree-view.addCustomView",
+        "title": "ARTree: Add custom view"
+      },
+      {
+        "command": "arxml-tree-view.editCustomView",
+        "title": "Edit Custom Views",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "arxml-tree-view.removeCustomView",
+        "title": "ARTree: Remove custom view",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "arxml-tree-view.applyCustomView",
+        "title": "ARTree: Apply custom view"
+      },
+      {
         "command": "arxml-tree-view.gotoNode",
         "title": "ARTree: Goto node"
       },
@@ -97,26 +120,366 @@
         "command": "arxml-tree-view.removeBookmark",
         "title": "ARTree: Remove bookmark",
         "icon": "$(trash)"
+      },
+      {
+        "command": "arxml-tree-view.applyFilter",
+        "title": "ARTree: Apply current filter"
+      },
+      {
+        "command": "arxml-tree-view.clearFilter",
+        "title": "ARTree: Clear search filter"
+      },
+      {
+        "command": "arxml-tree-view.exportAllCustomViews",
+        "title": "ARTree: Export all custom views"
+      },
+      {
+        "command": "arxml-tree-view.exportSelectedCustomViews",
+        "title": "ARTree: Export selected custom views"
+      },
+      {
+        "command": "arxml-tree-view.importCustomViews",
+        "title": "ARTree: Import custom views"
+      },
+      {
+        "command": "arxml-integrated-tree.refresh",
+        "title": "ARTree: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "arxml-integrated-tree.toggleSearch",
+        "title": "ARTree: Toggle Filter Controls"
+      },
+      {
+        "command": "arxml-integrated-tree.clearFilter",
+        "title": "ARTree: Clear Filter",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "arxml-integrated-tree.showCurrentFileSearch",
+        "title": "ARTree: Toggle File Filter",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "arxml-integrated-tree.applyRecentSearch",
+        "title": "ARTree: Apply Recent Filter"
+      },
+      {
+        "command": "arxml-integrated-tree.revealSearchResult",
+        "title": "ARTree: Reveal Search Result"
+      },
+      {
+        "command": "arxml-integrated-tree.editFilterName",
+        "title": "ARTree: Edit Name Filter"
+      },
+      {
+        "command": "arxml-integrated-tree.editFilterArpath",
+        "title": "ARTree: Edit ARPATH Filter"
+      },
+      {
+        "command": "arxml-integrated-tree.editFilterElement",
+        "title": "ARTree: Edit Element Filter"
+      },
+      {
+        "command": "arxml-integrated-tree.clearRecentFilters",
+        "title": "Remove All",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "arxml-integrated-tree.editRecentFilter",
+        "title": "Edit",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "arxml-integrated-tree.removeRecentFilter",
+        "title": "Remove",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "arxml-integrated-tree.setNameModeContains",
+        "title": "Contains"
+      },
+      {
+        "command": "arxml-integrated-tree.setNameModeContainsChecked",
+        "title": "✓ Contains"
+      },
+      {
+        "command": "arxml-integrated-tree.setNameModeRegex",
+        "title": "Regex"
+      },
+      {
+        "command": "arxml-integrated-tree.setNameModeRegexChecked",
+        "title": "✓ Regex"
+      },
+      {
+        "command": "arxml-integrated-tree.setNameModeGlob",
+        "title": "Glob"
+      },
+      {
+        "command": "arxml-integrated-tree.setNameModeGlobChecked",
+        "title": "✓ Glob"
+      },
+      {
+        "command": "arxml-integrated-tree.setArpathModeContains",
+        "title": "Contains"
+      },
+      {
+        "command": "arxml-integrated-tree.setArpathModeContainsChecked",
+        "title": "✓ Contains"
+      },
+      {
+        "command": "arxml-integrated-tree.setArpathModeRegex",
+        "title": "Regex"
+      },
+      {
+        "command": "arxml-integrated-tree.setArpathModeRegexChecked",
+        "title": "✓ Regex"
+      },
+      {
+        "command": "arxml-integrated-tree.setArpathModeGlob",
+        "title": "Glob"
+      },
+      {
+        "command": "arxml-integrated-tree.setArpathModeGlobChecked",
+        "title": "✓ Glob"
+      },
+      {
+        "command": "arxml-integrated-tree.setElementModeContains",
+        "title": "Contains"
+      },
+      {
+        "command": "arxml-integrated-tree.setElementModeContainsChecked",
+        "title": "✓ Contains"
+      },
+      {
+        "command": "arxml-integrated-tree.setElementModeRegex",
+        "title": "Regex"
+      },
+      {
+        "command": "arxml-integrated-tree.setElementModeRegexChecked",
+        "title": "✓ Regex"
+      },
+      {
+        "command": "arxml-integrated-tree.setElementModeGlob",
+        "title": "Glob"
+      },
+      {
+        "command": "arxml-integrated-tree.setElementModeGlobChecked",
+        "title": "✓ Glob"
+      },
+      {
+        "command": "arxml-integrated-tree.selectCustomView",
+        "title": "ARTree: Select Custom View"
+      },
+      {
+        "command": "arxml-integrated-tree.applyCustomViewById",
+        "title": "ARTree: Apply Custom View"
+      },
+      {
+        "command": "arxml-integrated-tree.toggleCustomView",
+        "title": "Toggle Custom View",
+        "icon": "$(layout)"
+      },
+      {
+        "command": "arxml-integrated-tree.toggleFileFilterOn",
+        "title": "Turn Filter Off",
+        "icon": "$(circle-slash)"
+      },
+      {
+        "command": "arxml-integrated-tree.toggleFileFilterOff",
+        "title": "Turn Filter On",
+        "icon": "$(pass)"
+      },
+      {
+        "command": "arxml-integrated-tree.toggleCustomViewOn",
+        "title": "Disable Custom View",
+        "icon": "$(circle-slash)"
+      },
+      {
+        "command": "arxml-integrated-tree.toggleCustomViewOff",
+        "title": "Enable Custom View",
+        "icon": "$(pass)"
       }
     ],
     "menus": {
-      "view/title": [
-        {
-          "command": "arxml-tree-view.refresh",
-          "when": "view == arxml-tree-view",
-          "group": "navigation"
-        }
-      ],
       "view/item/context": [
         {
           "command": "arxml-tree-view.addBookmark",
-          "when": "view == arxml-tree-view"
+          "when": "view == arxml-integrated-view && viewItem != filterControlsRoot && viewItem != viewControlsRoot && viewItem != customViewsRoot && viewItem != customViewItem && viewItem != customViewEmpty && viewItem != currentView && viewItem != arxmlFilesRoot && viewItem != searchMatch && viewItem != searchFileResult && viewItem != recentFiltersRoot && viewItem != recentSearch && viewItem != filterName && viewItem != filterArpath && viewItem != filterElement"
+        },
+        {
+          "command": "arxml-integrated-tree.revealSearchResult",
+          "when": "view == arxml-integrated-view && viewItem == searchMatch",
+          "group": "inline@1"
+        },
+        {
+          "command": "arxml-integrated-tree.clearRecentFilters",
+          "when": "view == arxml-integrated-view && viewItem == recentFiltersRoot",
+          "group": "inline@1"
+        },
+        {
+          "command": "arxml-integrated-tree.toggleFileFilterOn",
+          "when": "view == arxml-integrated-view && viewItem == filterControlsRoot && arxmlTree.filterActive == true",
+          "group": "inline@1"
+        },
+        {
+          "command": "arxml-integrated-tree.toggleFileFilterOff",
+          "when": "view == arxml-integrated-view && viewItem == filterControlsRoot && arxmlTree.filterActive != true",
+          "group": "inline@1"
+        },
+        {
+          "command": "arxml-integrated-tree.toggleCustomViewOn",
+          "when": "view == arxml-integrated-view && viewItem == viewControlsRoot && arxmlTree.viewActive == true",
+          "group": "inline@1"
+        },
+        {
+          "command": "arxml-integrated-tree.toggleCustomViewOff",
+          "when": "view == arxml-integrated-view && viewItem == viewControlsRoot && arxmlTree.viewActive != true",
+          "group": "inline@1"
+        },
+        {
+          "command": "arxml-integrated-tree.editRecentFilter",
+          "when": "view == arxml-integrated-view && viewItem == recentSearch",
+          "group": "inline@1"
+        },
+        {
+          "command": "arxml-integrated-tree.removeRecentFilter",
+          "when": "view == arxml-integrated-view && viewItem == recentSearch",
+          "group": "inline@2"
+        },
+        {
+          "command": "arxml-tree-view.editCustomView",
+          "when": "view == arxml-integrated-view && viewItem == customViewsRoot",
+          "group": "inline@1"
+        },
+        {
+          "command": "arxml-integrated-tree.setNameModeContainsChecked",
+          "when": "view == arxml-integrated-view && viewItem == filterName && arxmlTree.filterNameMode == 'contains'",
+          "group": "navigation@1"
+        },
+        {
+          "command": "arxml-integrated-tree.setNameModeContains",
+          "when": "view == arxml-integrated-view && viewItem == filterName && arxmlTree.filterNameMode != 'contains'",
+          "group": "navigation@1"
+        },
+        {
+          "command": "arxml-integrated-tree.setNameModeRegexChecked",
+          "when": "view == arxml-integrated-view && viewItem == filterName && arxmlTree.filterNameMode == 'regex'",
+          "group": "navigation@2"
+        },
+        {
+          "command": "arxml-integrated-tree.setNameModeRegex",
+          "when": "view == arxml-integrated-view && viewItem == filterName && arxmlTree.filterNameMode != 'regex'",
+          "group": "navigation@2"
+        },
+        {
+          "command": "arxml-integrated-tree.setNameModeGlobChecked",
+          "when": "view == arxml-integrated-view && viewItem == filterName && arxmlTree.filterNameMode == 'glob'",
+          "group": "navigation@3"
+        },
+        {
+          "command": "arxml-integrated-tree.setNameModeGlob",
+          "when": "view == arxml-integrated-view && viewItem == filterName && arxmlTree.filterNameMode != 'glob'",
+          "group": "navigation@3"
+        },
+        {
+          "command": "arxml-integrated-tree.setArpathModeContainsChecked",
+          "when": "view == arxml-integrated-view && viewItem == filterArpath && arxmlTree.filterArpathMode == 'contains'",
+          "group": "navigation@1"
+        },
+        {
+          "command": "arxml-integrated-tree.setArpathModeContains",
+          "when": "view == arxml-integrated-view && viewItem == filterArpath && arxmlTree.filterArpathMode != 'contains'",
+          "group": "navigation@1"
+        },
+        {
+          "command": "arxml-integrated-tree.setArpathModeRegexChecked",
+          "when": "view == arxml-integrated-view && viewItem == filterArpath && arxmlTree.filterArpathMode == 'regex'",
+          "group": "navigation@2"
+        },
+        {
+          "command": "arxml-integrated-tree.setArpathModeRegex",
+          "when": "view == arxml-integrated-view && viewItem == filterArpath && arxmlTree.filterArpathMode != 'regex'",
+          "group": "navigation@2"
+        },
+        {
+          "command": "arxml-integrated-tree.setArpathModeGlobChecked",
+          "when": "view == arxml-integrated-view && viewItem == filterArpath && arxmlTree.filterArpathMode == 'glob'",
+          "group": "navigation@3"
+        },
+        {
+          "command": "arxml-integrated-tree.setArpathModeGlob",
+          "when": "view == arxml-integrated-view && viewItem == filterArpath && arxmlTree.filterArpathMode != 'glob'",
+          "group": "navigation@3"
+        },
+        {
+          "command": "arxml-integrated-tree.setElementModeContainsChecked",
+          "when": "view == arxml-integrated-view && viewItem == filterElement && arxmlTree.filterElementMode == 'contains'",
+          "group": "navigation@1"
+        },
+        {
+          "command": "arxml-integrated-tree.setElementModeContains",
+          "when": "view == arxml-integrated-view && viewItem == filterElement && arxmlTree.filterElementMode != 'contains'",
+          "group": "navigation@1"
+        },
+        {
+          "command": "arxml-integrated-tree.setElementModeRegexChecked",
+          "when": "view == arxml-integrated-view && viewItem == filterElement && arxmlTree.filterElementMode == 'regex'",
+          "group": "navigation@2"
+        },
+        {
+          "command": "arxml-integrated-tree.setElementModeRegex",
+          "when": "view == arxml-integrated-view && viewItem == filterElement && arxmlTree.filterElementMode != 'regex'",
+          "group": "navigation@2"
+        },
+        {
+          "command": "arxml-integrated-tree.setElementModeGlobChecked",
+          "when": "view == arxml-integrated-view && viewItem == filterElement && arxmlTree.filterElementMode == 'glob'",
+          "group": "navigation@3"
+        },
+        {
+          "command": "arxml-integrated-tree.setElementModeGlob",
+          "when": "view == arxml-integrated-view && viewItem == filterElement && arxmlTree.filterElementMode != 'glob'",
+          "group": "navigation@3"
         },
         {
           "command": "arxml-tree-view.removeBookmark",
           "when": "view == bookmark-tree-view && viewItem == bookmarkNode"
         }
       ]
+    },
+    "keybindings": [
+      {
+        "command": "arxml-integrated-tree.toggleSearch",
+        "key": "ctrl+shift+f",
+        "mac": "cmd+shift+f",
+        "when": "focusedView == arxml-integrated-view || editorLangId == arxml"
+      },
+      {
+        "command": "arxml-integrated-tree.showCurrentFileSearch",
+        "key": "ctrl+f",
+        "mac": "cmd+f",
+        "when": "focusedView == arxml-integrated-view"
+      },
+      {
+        "command": "arxml-integrated-tree.clearFilter",
+        "key": "escape",
+        "when": "focusedView == arxml-integrated-view"
+      }
+    ],
+    "configuration": {
+      "title": "ARXML Tree",
+      "properties": {
+        "arxmlTree.customViewStorageScope": {
+          "type": "string",
+          "default": "workspace",
+          "enum": [
+            "workspace",
+            "global"
+          ],
+          "description": "Choose where custom view configurations are stored."
+        }
+      }
     }
   },
   "main": "./out/extension.js",

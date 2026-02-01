@@ -1,0 +1,29 @@
+[
+  {
+    "id": "builtin-cdd-overview",
+    "name": "CDD: Complex Device Description",
+    "description": "Complex Device Description definitions",
+    "filters": {
+      "elementTags": [
+        "ECUDOC",
+        "ATTRCAT",
+        "STRDEF",
+        "ENUMDEF",
+        "UNSDEF",
+        "CSTRDEF",
+        "DIAGCLASSATTS",
+        "DIAGINSTATTS",
+        "ECUATTS"
+      ]
+    },
+    "nameTags": [
+      "SHORT-NAME",
+      "NAME"
+    ],
+    "nameTextTags": [
+      "TUV"
+    ],
+    "parseMode": "lenient",
+    "sort": "name"
+  }
+]

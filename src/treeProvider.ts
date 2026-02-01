@@ -2,24 +2,45 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { parseArxmlDocument } from './arxmlParser';
 import { ArxmlNode, equalsArxmlNodes } from './arxmlNode';
+import { CustomViewConfig, CustomViewParseMode, CustomViewSort } from './customViewStore';
+import { OptimizedTreeProvider, LazyArxmlNode } from './optimizedTreeProvider';
+
+export type TreeFilterMode = 'contains' | 'regex' | 'glob';
+
+export interface TreeFilterConfig {
+  mode: TreeFilterMode;
+  nameMode?: TreeFilterMode;
+  arpathMode?: TreeFilterMode;
+  elementMode?: TreeFilterMode;
+  name?: string;
+  arpath?: string;
+  element?: string;
+}
 
 export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vscode.Disposable {
   private _onDidChangeTreeData: vscode.EventEmitter<ArxmlNode | undefined | void> = new vscode.EventEmitter();
   readonly onDidChangeTreeData: vscode.Event<ArxmlNode | undefined | void> = this._onDidChangeTreeData.event;
 
   private arxmlDocument: vscode.TextDocument | undefined;
-  private parsedDocuments: Map<string, { root: ArxmlNode; version: number }> = new Map();
+  private parsedDocuments: Map<string, { root: ArxmlNode; version: number; nameTags: string[]; nameTextTags: string[]; parseMode: CustomViewParseMode }> = new Map();
   private lastHighlightedNode: ArxmlNode | undefined;
   private refreshTimer: NodeJS.Timeout | undefined;
   private readonly disposables: vscode.Disposable[] = [];
   private parsePromise: Promise<void> | undefined;
   private arpathIndex: Map<string, ArxmlNode[]> = new Map();
+  private customViewByUri: Map<string, CustomViewConfig | undefined> = new Map();
+  private filteredRootsByUri: Map<string, ArxmlNode | undefined> = new Map();
+  private filterByUri: Map<string, TreeFilterConfig | undefined> = new Map();
+  
+  private optimizedProvider: OptimizedTreeProvider;
+  private static readonly LARGE_TREE_THRESHOLD = 1000;
 
   private readonly highlightType: vscode.TextEditorDecorationType = vscode.window.createTextEditorDecorationType({
     backgroundColor: 'rgba(0, 200, 0, 0.2)',
   });
 
   constructor() {
+    this.optimizedProvider = new OptimizedTreeProvider();
     this.disposables.push(
       vscode.workspace.onDidChangeTextDocument(this.onDidChangeTextDocument, this),
       vscode.window.onDidChangeActiveTextEditor(this.onDidChangeActiveTextEditor, this),
@@ -119,11 +140,127 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
     return node.parent;
   }
 
-  getChildren(node?: ArxmlNode): Thenable<ArxmlNode[]> {
+  async getChildren(node?: ArxmlNode): Promise<ArxmlNode[]> {
     if (node && node.children) {
-      return Promise.resolve(node.children);
+      const filter = this.getCurrentFilter();
+      if (this.shouldUseOptimizedProvider(node, filter)) {
+        const lazyNode = node as LazyArxmlNode;
+        const optimizedChildren = await this.optimizedProvider.getOptimizedChildren(lazyNode, filter);
+        return optimizedChildren;
+      }
+      return node.children;
     }
-    return Promise.resolve(this.getRootNodes());
+    return this.getRootNodes();
+  }
+
+  private shouldUseOptimizedProvider(node: ArxmlNode, filter?: TreeFilterConfig): boolean {
+    if (!filter) {
+      return false;
+    }
+    
+    const childrenCount = this.getDescendantCount(node);
+    return childrenCount > ArxmlTreeProvider.LARGE_TREE_THRESHOLD;
+  }
+
+  private getDescendantCount(node: ArxmlNode): number {
+    let count = node.children.length;
+    for (const child of node.children) {
+      count += this.getDescendantCount(child);
+    }
+    return count;
+  }
+
+  private getCurrentFilter(): TreeFilterConfig | undefined {
+    const activeDoc = vscode.window.activeTextEditor?.document;
+    if (!activeDoc || activeDoc.languageId !== 'arxml') {
+      return undefined;
+    }
+    return this.filterByUri.get(activeDoc.uri.toString());
+  }
+
+  async setCustomViewForDocument(document: vscode.TextDocument, view?: CustomViewConfig): Promise<void> {
+    if (document.languageId !== 'arxml') {
+      return;
+    }
+    if (this.parsePromise) {
+      await this.parsePromise;
+    }
+    const uriString = document.uri.toString();
+    const previous = this.customViewByUri.get(uriString);
+    this.customViewByUri.set(uriString, view);
+    const prevOptions = resolveParseOptions(previous);
+    const nextOptions = resolveParseOptions(view);
+    const shouldReparse = prevOptions.parseMode !== nextOptions.parseMode
+      || !sameList(prevOptions.nameTags, nextOptions.nameTags)
+      || !sameList(prevOptions.nameTextTags, nextOptions.nameTextTags);
+    if (shouldReparse) {
+      await this.parseDocuments([document]);
+    } else {
+      this.rebuildFilteredRootForDocument(uriString);
+    }
+    this._onDidChangeTreeData.fire();
+  }
+
+  async setFilterForDocument(document: vscode.TextDocument, filter?: TreeFilterConfig): Promise<void> {
+    if (document.languageId !== 'arxml') {
+      return;
+    }
+    const uriString = document.uri.toString();
+    if (filter && isEmptyFilter(filter)) {
+      this.filterByUri.delete(uriString);
+    } else {
+      this.filterByUri.set(uriString, filter);
+    }
+
+    const entry = this.parsedDocuments.get(uriString);
+    if (entry && this.getDescendantCount(entry.root) > ArxmlTreeProvider.LARGE_TREE_THRESHOLD) {
+      this.optimizedProvider.clearCache();
+      this.optimizedProvider.debouncedApplyFilter(() => {
+        this.rebuildFilteredRootForDocument(uriString);
+        this._onDidChangeTreeData.fire();
+      });
+    } else {
+      this.rebuildFilteredRootForDocument(uriString);
+      this._onDidChangeTreeData.fire();
+    }
+  }
+
+  getFilterForDocument(document: vscode.TextDocument): TreeFilterConfig | undefined {
+    return this.filterByUri.get(document.uri.toString());
+  }
+
+  getCustomViewForDocument(document: vscode.TextDocument): CustomViewConfig | undefined {
+    return this.customViewByUri.get(document.uri.toString());
+  }
+
+  async updateCustomView(view: CustomViewConfig): Promise<void> {
+    const targets = Array.from(this.customViewByUri.entries())
+      .filter(([, value]) => value?.id === view.id)
+      .map(([uri]) => uri);
+    for (const uri of targets) {
+      this.customViewByUri.set(uri, view);
+      const doc = vscode.workspace.textDocuments.find(candidate => candidate.uri.toString() === uri);
+      if (doc) {
+        await this.setCustomViewForDocument(doc, view);
+      } else {
+        this.rebuildFilteredRootForDocument(uri);
+      }
+    }
+  }
+
+  async removeCustomViewId(id: string): Promise<void> {
+    const targets = Array.from(this.customViewByUri.entries())
+      .filter(([, value]) => value?.id === id)
+      .map(([uri]) => uri);
+    for (const uri of targets) {
+      this.customViewByUri.set(uri, undefined);
+      const doc = vscode.workspace.textDocuments.find(candidate => candidate.uri.toString() === uri);
+      if (doc) {
+        await this.setCustomViewForDocument(doc, undefined);
+      } else {
+        this.rebuildFilteredRootForDocument(uri);
+      }
+    }
   }
 
   findNode(node: ArxmlNode): ArxmlNode | undefined {
@@ -245,6 +382,7 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
     this.parsePromise = this.parseDocuments(targetDocuments)
       .then(changed => {
         if (changed) {
+          this.rebuildFilteredRoots();
           this._onDidChangeTreeData.fire();
         }
       })
@@ -271,7 +409,8 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
     for (const doc of allArxmlDocs) {
       const uriString = doc.uri.toString();
       const cached = this.parsedDocuments.get(uriString);
-      if (!cached || cached.version !== doc.version) {
+      const options = resolveParseOptions(this.customViewByUri.get(uriString));
+      if (!cached || cached.version !== doc.version || cached.parseMode !== options.parseMode || !sameList(cached.nameTags, options.nameTags) || !sameList(cached.nameTextTags, options.nameTextTags)) {
         docsToParse.push(doc);
       }
     }
@@ -309,15 +448,31 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
     for (const document of documents) {
       const uriString = document.uri.toString();
       const cached = this.parsedDocuments.get(uriString);
-      if (cached && cached.version === document.version) {
+      const options = resolveParseOptions(this.customViewByUri.get(uriString));
+      if (cached && cached.version === document.version && cached.parseMode === options.parseMode && sameList(cached.nameTags, options.nameTags) && sameList(cached.nameTextTags, options.nameTextTags)) {
         continue;
       }
       try {
-        const root = await parseArxmlDocument(document.getText(), document.uri, (offset) => document.positionAt(offset));
+        const root = await parseArxmlDocument(
+          document.getText(),
+          document.uri,
+          (offset) => document.positionAt(offset),
+          {
+            strict: options.parseMode === 'strict',
+            nameTags: options.nameTags,
+            nameTextTags: options.nameTextTags
+          }
+        );
         if (root) {
           root.name = path.basename(document.uri.fsPath);
           root.parent = undefined;
-          this.parsedDocuments.set(uriString, { root, version: document.version });
+          this.parsedDocuments.set(uriString, {
+            root,
+            version: document.version,
+            nameTags: options.nameTags,
+            nameTextTags: options.nameTextTags,
+            parseMode: options.parseMode
+          });
           changed = true;
         } else if (this.parsedDocuments.has(uriString)) {
           this.parsedDocuments.delete(uriString);
@@ -331,6 +486,7 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
     // Rebuild the entire index from all parsed documents
     if (changed) {
       this.rebuildArpathIndex();
+      this.rebuildFilteredRoots();
     }
 
     return changed;
@@ -345,8 +501,15 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
   }
 
   private getRootNodes(): ArxmlNode[] {
-    return Array.from(this.parsedDocuments.values())
-      .map(entry => entry.root)
+    return this.getParsedRootNodes();
+  }
+
+  private getParsedRootNodes(): ArxmlNode[] {
+    return Array.from(this.parsedDocuments.entries())
+      .map(([uri, entry]) => {
+        return this.filteredRootsByUri.get(uri) ?? entry.root;
+      })
+      .filter((root): root is ArxmlNode => Boolean(root))
       .sort((a, b) => a.file.fsPath.localeCompare(b.file.fsPath));
   }
 
@@ -442,6 +605,118 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
       stack.push(...node.children);
     }
   }
+
+  private rebuildFilteredRoots(): void {
+    for (const uri of this.parsedDocuments.keys()) {
+      this.rebuildFilteredRootForDocument(uri);
+    }
+  }
+
+  private rebuildFilteredRootForDocument(uri: string): void {
+    const entry = this.parsedDocuments.get(uri);
+    if (!entry) {
+      this.filteredRootsByUri.delete(uri);
+      return;
+    }
+    const view = this.customViewByUri.get(uri);
+    const filter = this.filterByUri.get(uri);
+    const base = view ? buildFilteredTree(entry.root, view, undefined) : entry.root;
+    const filtered = filter ? buildFilteredTreeWithFilter(base ?? entry.root, filter, undefined) : base;
+    if (!view && !filter) {
+      this.filteredRootsByUri.delete(uri);
+      return;
+    }
+    this.filteredRootsByUri.set(uri, filtered ?? createEmptyRoot(entry.root));
+  }
+
+  getPerformanceStats(): { 
+    optimizedCache: { cacheSize: number; loadingChunks: number };
+    parsedDocuments: number;
+    filteredRoots: number;
+  } {
+    return {
+      optimizedCache: this.optimizedProvider.getCacheStats(),
+      parsedDocuments: this.parsedDocuments.size,
+      filteredRoots: this.filteredRootsByUri.size
+    };
+  }
+
+  async preloadVisibleNodes(rootNode?: ArxmlNode): Promise<void> {
+    if (!rootNode) {
+      const roots = this.getRootNodes();
+      if (roots.length === 0) {return;}
+      rootNode = roots[0];
+    }
+
+    const filter = this.getCurrentFilter();
+    if (filter && this.shouldUseOptimizedProvider(rootNode, filter)) {
+      await this.optimizedProvider.preloadChildren(rootNode as LazyArxmlNode, filter);
+    }
+  }
+
+  async getFilterResultCount(filter: TreeFilterConfig): Promise<number> {
+    const activeDoc = vscode.window.activeTextEditor?.document;
+    if (!activeDoc || activeDoc.languageId !== 'arxml') {
+      return 0;
+    }
+
+    const entry = this.parsedDocuments.get(activeDoc.uri.toString());
+    if (!entry) {
+      return 0;
+    }
+
+    if (this.getDescendantCount(entry.root) > ArxmlTreeProvider.LARGE_TREE_THRESHOLD) {
+      return await this.optimizedProvider.getFilteredNodeCount(entry.root as LazyArxmlNode, filter);
+    } else {
+      return this.countFilteredNodes(entry.root, filter);
+    }
+  }
+
+  private countFilteredNodes(node: ArxmlNode, filter: TreeFilterConfig): number {
+    let count = 0;
+    if (matchesTreeFilter(node, filter)) {
+      count++;
+    }
+    for (const child of node.children) {
+      count += this.countFilteredNodes(child, filter);
+    }
+    return count;
+  }
+
+  async searchInTree(searchTerm: string, maxResults = 100): Promise<ArxmlNode[]> {
+    const roots = this.getRootNodes();
+    if (roots.length === 0) {return [];}
+
+    const rootNode = roots[0];
+    if (this.getDescendantCount(rootNode) > ArxmlTreeProvider.LARGE_TREE_THRESHOLD) {
+      const results = await this.optimizedProvider.searchNodes(rootNode as LazyArxmlNode, searchTerm, maxResults);
+      return results;
+    } else {
+      return this.searchNodesSynchronous(rootNode, searchTerm, maxResults);
+    }
+  }
+
+  private searchNodesSynchronous(node: ArxmlNode, searchTerm: string, maxResults: number): ArxmlNode[] {
+    const results: ArxmlNode[] = [];
+    const stack: ArxmlNode[] = [node];
+    const searchLower = searchTerm.toLowerCase();
+
+    while (stack.length > 0 && results.length < maxResults) {
+      const current = stack.pop()!;
+      
+      if (current.name.toLowerCase().includes(searchLower) || 
+          current.arpath.toLowerCase().includes(searchLower) ||
+          current.element.toLowerCase().includes(searchLower)) {
+        results.push(current);
+      }
+      
+      if (current.children && results.length < maxResults) {
+        stack.push(...current.children);
+      }
+    }
+
+    return results;
+  }
 }
 
 function normalizeArpath(arpath: string): string {
@@ -476,6 +751,232 @@ function buildArpathVariants(arpath: string): string[] {
   }
 
   return Array.from(variants);
+}
+
+function buildFilteredTree(root: ArxmlNode, config: CustomViewConfig, parent: ArxmlNode | undefined): ArxmlNode | undefined {
+  const children = root.children
+    .map(child => buildFilteredTree(child, config, undefined))
+    .filter((child): child is ArxmlNode => Boolean(child));
+
+  const matches = matchesCustomView(root, config);
+  if (!matches && children.length === 0) {
+    return undefined;
+  }
+
+  const next: ArxmlNode = {
+    name: root.name,
+    arpath: root.arpath,
+    element: root.element,
+    file: root.file,
+    range: root.range,
+    uuid: root.uuid,
+    parent,
+    children: []
+  };
+
+  const sortedChildren = sortChildren(children, config.sort);
+  next.children = sortedChildren.map(child => reparentTree(child, next));
+
+  return next;
+}
+
+function resolveParseMode(view?: CustomViewConfig): CustomViewParseMode {
+  return view?.parseMode ?? 'strict';
+}
+
+function resolveParseOptions(view?: CustomViewConfig): {
+  parseMode: CustomViewParseMode;
+  nameTags: string[];
+  nameTextTags: string[];
+} {
+  return {
+    parseMode: resolveParseMode(view),
+    nameTags: view?.nameTags ?? ['SHORT-NAME'],
+    nameTextTags: view?.nameTextTags ?? []
+  };
+}
+
+function sameList(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  const leftNorm = left.map(value => value.toUpperCase()).sort();
+  const rightNorm = right.map(value => value.toUpperCase()).sort();
+  return leftNorm.every((value, index) => value === rightNorm[index]);
+}
+
+function createEmptyRoot(root: ArxmlNode): ArxmlNode {
+  return {
+    name: root.name,
+    arpath: root.arpath,
+    element: root.element,
+    file: root.file,
+    range: root.range,
+    uuid: root.uuid,
+    parent: undefined,
+    children: []
+  };
+}
+
+
+function buildFilteredTreeWithFilter(root: ArxmlNode, filter: TreeFilterConfig, parent: ArxmlNode | undefined): ArxmlNode | undefined {
+  const children = root.children
+    .map(child => buildFilteredTreeWithFilter(child, filter, undefined))
+    .filter((child): child is ArxmlNode => Boolean(child));
+
+  const matches = matchesTreeFilter(root, filter);
+  if (!matches && children.length === 0) {
+    return undefined;
+  }
+
+  const next: ArxmlNode = {
+    name: root.name,
+    arpath: root.arpath,
+    element: root.element,
+    file: root.file,
+    range: root.range,
+    uuid: root.uuid,
+    parent,
+    children: []
+  };
+
+  next.children = children.map(child => reparentTree(child, next));
+  return next;
+}
+
+function matchesTreeFilter(node: ArxmlNode, filter: TreeFilterConfig): boolean {
+  if (filter.name && !matchesPattern(node.name, filter.name, resolveFilterMode(filter, 'name'))) {
+    return false;
+  }
+  if (filter.arpath && !matchesPattern(node.arpath, filter.arpath, resolveFilterMode(filter, 'arpath'))) {
+    return false;
+  }
+  if (filter.element && !matchesPattern(node.element, filter.element, resolveFilterMode(filter, 'element'))) {
+    return false;
+  }
+  return true;
+}
+
+function resolveFilterMode(filter: TreeFilterConfig, field: 'name' | 'arpath' | 'element'): TreeFilterMode {
+  if (field === 'name' && filter.nameMode) {
+    return filter.nameMode;
+  }
+  if (field === 'arpath' && filter.arpathMode) {
+    return filter.arpathMode;
+  }
+  if (field === 'element' && filter.elementMode) {
+    return filter.elementMode;
+  }
+  return filter.mode;
+}
+
+function matchesPattern(value: string, pattern: string, mode: TreeFilterMode): boolean {
+  if (!pattern) {
+    return true;
+  }
+  if (mode === 'contains') {
+    return value.toLowerCase().includes(pattern.toLowerCase());
+  }
+  if (mode === 'regex') {
+    const regex = parseRegex(pattern);
+    if (!regex) {
+      return false;
+    }
+    return regex.test(value);
+  }
+  return globToRegex(pattern).test(value);
+}
+
+function parseRegex(pattern: string): RegExp | undefined {
+  const trimmed = pattern.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (trimmed.startsWith('/') && trimmed.lastIndexOf('/') > 0) {
+    const lastSlash = trimmed.lastIndexOf('/');
+    const body = trimmed.slice(1, lastSlash);
+    const flags = trimmed.slice(lastSlash + 1) || 'i';
+    try {
+      return new RegExp(body, flags);
+    } catch {
+      return undefined;
+    }
+  }
+  try {
+    return new RegExp(trimmed, 'i');
+  } catch {
+    return undefined;
+  }
+}
+
+function globToRegex(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  const regexText = '^' + escaped.replace(/\*/g, '.*').replace(/\?/g, '.') + '$';
+  return new RegExp(regexText, 'i');
+}
+
+function isEmptyFilter(filter: TreeFilterConfig): boolean {
+  return !filter.name && !filter.arpath && !filter.element;
+}
+
+function reparentTree(node: ArxmlNode, parent: ArxmlNode | undefined): ArxmlNode {
+  const next: ArxmlNode = {
+    name: node.name,
+    arpath: node.arpath,
+    element: node.element,
+    file: node.file,
+    range: node.range,
+    uuid: node.uuid,
+    parent,
+    children: []
+  };
+  next.children = node.children.map(child => reparentTree(child, next));
+  return next;
+}
+
+function matchesCustomView(node: ArxmlNode, config: CustomViewConfig): boolean {
+  const filters = config.filters ?? {};
+  if (filters.arpathPrefix) {
+    const prefix = normalizeArpath(filters.arpathPrefix);
+    if (!normalizeArpath(node.arpath).startsWith(prefix)) {
+      return false;
+    }
+  }
+
+  if (filters.elementTags && filters.elementTags.length > 0) {
+    if (!filters.elementTags.includes(node.element)) {
+      return false;
+    }
+  }
+
+  if (filters.textContains) {
+    const needle = filters.textContains.toLowerCase();
+    if (!node.name.toLowerCase().includes(needle)) {
+      return false;
+    }
+  }
+
+  if (filters.uuidFilter === 'present' && !node.uuid) {
+    return false;
+  }
+  if (filters.uuidFilter === 'missing' && node.uuid) {
+    return false;
+  }
+
+  return true;
+}
+
+function sortChildren(children: ArxmlNode[], sort?: CustomViewSort): ArxmlNode[] {
+  if (!sort) {
+    return children;
+  }
+  const sorted = [...children];
+  if (sort === 'name') {
+    sorted.sort((a, b) => a.name.localeCompare(b.name));
+  } else if (sort === 'arpath') {
+    sorted.sort((a, b) => a.arpath.localeCompare(b.arpath));
+  }
+  return sorted;
 }
 
 interface SerializedBookmark {
