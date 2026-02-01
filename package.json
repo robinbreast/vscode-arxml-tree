@@ -478,6 +478,28 @@
             "global"
           ],
           "description": "Choose where custom view configurations are stored."
+        },
+        "arxmlTree.refreshMode": {
+          "type": "string",
+          "default": "onChange",
+          "enum": [
+            "onChange",
+            "onSave",
+            "manual"
+          ],
+          "description": "Control when the ARXML tree is refreshed. 'onChange' updates on every edit (may impact performance on large files), 'onSave' updates only when the file is saved, 'manual' requires explicit refresh via ARTree: Refresh command. Note: on-save and manual modes parse only the active document for hover and selection sync, so cross-file references may show stale information until a save or manual refresh occurs."
+        },
+        "arxmlTree.debounceDelay": {
+          "type": "number",
+          "default": 200,
+          "minimum": 100,
+          "maximum": 5000,
+          "description": "Debounce delay in milliseconds for tree refresh operations. Higher values reduce CPU usage but increase latency between edits and tree updates."
+        },
+        "arxmlTree.adaptiveDebounce": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable adaptive debouncing that automatically increases delay for large files to maintain responsiveness."
         }
       }
     }

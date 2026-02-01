@@ -94,6 +94,23 @@ The extension is optimized for large ARXML files:
 - Performance-optimized counting for large trees
 - Background processing ensures UI remains responsive
 
+### Performance Settings
+Fine-tune refresh behavior and debouncing to match your workflow:
+
+**`arxmlTree.refreshMode`** (default: `onChange`)
+- `onChange`: Tree updates on every keystroke (most responsive, higher CPU usage)
+- `onSave`: Tree updates only when file is saved (lower CPU); hover and selection sync parse only the active document, so cross-file references may show stale information until saved
+- `manual`: Requires explicit refresh via **ARTree: Refresh** command (lowest CPU, best for very large files); hover and selection sync parse only the active document, so cross-file references may show stale information until manual refresh
+
+**`arxmlTree.debounceDelay`** (default: 200ms, range: 100–5000ms)
+- Delay in milliseconds before tree refresh is triggered
+- Higher values reduce CPU usage but increase latency between edits and tree updates
+- Recommended: 200–500ms for most workflows
+
+**`arxmlTree.adaptiveDebounce`** (default: true)
+- Automatically increases debounce delay for large files to maintain UI responsiveness
+- Disable if you prefer consistent refresh timing regardless of file size
+
 ## Limitations & Tips
 - **Cross-File Navigation:** The extension can only navigate to references in currently **open** ARXML files. If a reference shows "Not found in open files", open the target ARXML file containing that definition.
 - **ECUC Definitions:** Some AUTOSAR ECUC module definitions (like `/MICROSAR/Rte/...`) may be in separate definition files. Open these files for full navigation support.

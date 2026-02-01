@@ -27,7 +27,9 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
   private refreshTimer: NodeJS.Timeout | undefined;
   private readonly disposables: vscode.Disposable[] = [];
   private parsePromise: Promise<void> | undefined;
+  private pendingRefresh: boolean = false;
   private arpathIndex: Map<string, ArxmlNode[]> = new Map();
+  private docArpathKeys: Map<string, Set<string>> = new Map();
   private customViewByUri: Map<string, CustomViewConfig | undefined> = new Map();
   private filteredRootsByUri: Map<string, ArxmlNode | undefined> = new Map();
   private filterByUri: Map<string, TreeFilterConfig | undefined> = new Map();
@@ -43,6 +45,7 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
     this.optimizedProvider = new OptimizedTreeProvider();
     this.disposables.push(
       vscode.workspace.onDidChangeTextDocument(this.onDidChangeTextDocument, this),
+      vscode.workspace.onDidSaveTextDocument(this.onDidSaveTextDocument, this),
       vscode.window.onDidChangeActiveTextEditor(this.onDidChangeActiveTextEditor, this),
       vscode.window.onDidChangeTextEditorSelection(this.onDidChangeTextEditorSelection, this)
     );
@@ -78,7 +81,29 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
 
     if (!this.arxmlDocument || event.document.uri.toString() === this.arxmlDocument.uri.toString()) {
       this.arxmlDocument = event.document;
-      this.scheduleRefresh();
+      
+      const config = vscode.workspace.getConfiguration('arxmlTree');
+      const refreshMode = config.get<string>('refreshMode', 'onChange');
+      
+      if (refreshMode === 'onChange') {
+        this.scheduleRefresh();
+      }
+    }
+  }
+
+  private onDidSaveTextDocument(document: vscode.TextDocument): void {
+    if (document.languageId !== 'arxml') {
+      return;
+    }
+
+    const config = vscode.workspace.getConfiguration('arxmlTree');
+    const refreshMode = config.get<string>('refreshMode', 'onChange');
+    
+    if (refreshMode === 'onSave') {
+      if (!this.arxmlDocument || document.uri.toString() === this.arxmlDocument.uri.toString()) {
+        this.arxmlDocument = document;
+        this.scheduleRefresh();
+      }
     }
   }
 
@@ -194,7 +219,12 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
       || !sameList(prevOptions.nameTags, nextOptions.nameTags)
       || !sameList(prevOptions.nameTextTags, nextOptions.nameTextTags);
     if (shouldReparse) {
-      await this.parseDocuments([document]);
+      const changedUris = await this.parseDocuments([document]);
+      for (const uri of changedUris) {
+        this.removeDocumentFromIndex(uri);
+        this.indexDocument(uri);
+        this.rebuildFilteredRootForDocument(uri);
+      }
     } else {
       this.rebuildFilteredRootForDocument(uriString);
     }
@@ -357,7 +387,26 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
     if (this.refreshTimer) {
       clearTimeout(this.refreshTimer);
     }
-    const delay = forceImmediate ? 0 : 200;
+    
+    let delay = 0;
+    if (!forceImmediate) {
+      const config = vscode.workspace.getConfiguration('arxmlTree');
+      const baseDelay = config.get<number>('debounceDelay', 200);
+      const adaptiveDebounce = config.get<boolean>('adaptiveDebounce', true);
+      
+      if (adaptiveDebounce && this.arxmlDocument) {
+        const uriString = this.arxmlDocument.uri.toString();
+        const entry = this.parsedDocuments.get(uriString);
+        if (entry && this.getDescendantCount(entry.root) > ArxmlTreeProvider.LARGE_TREE_THRESHOLD) {
+          delay = baseDelay * 2;
+        } else {
+          delay = baseDelay;
+        }
+      } else {
+        delay = baseDelay;
+      }
+    }
+    
     this.refreshTimer = setTimeout(() => {
       this.refreshTimer = undefined;
       void this.rebuildTree();
@@ -375,14 +424,19 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
     }
 
     if (this.parsePromise) {
+      this.pendingRefresh = true;
       await this.parsePromise;
       return;
     }
 
     this.parsePromise = this.parseDocuments(targetDocuments)
-      .then(changed => {
-        if (changed) {
-          this.rebuildFilteredRoots();
+      .then(changedUris => {
+        if (changedUris.size > 0) {
+          for (const uri of changedUris) {
+            this.removeDocumentFromIndex(uri);
+            this.indexDocument(uri);
+            this.rebuildFilteredRootForDocument(uri);
+          }
           this._onDidChangeTreeData.fire();
         }
       })
@@ -391,14 +445,30 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
       })
       .finally(() => {
         this.parsePromise = undefined;
+        if (this.pendingRefresh) {
+          this.pendingRefresh = false;
+          this.scheduleRefresh();
+        }
       });
 
     await this.parsePromise;
   }
 
   private async ensureAllDocumentsParsed(): Promise<void> {
-    // Collect all open ARXML documents
-    const allArxmlDocs = vscode.workspace.textDocuments.filter(doc => doc.languageId === 'arxml');
+    const config = vscode.workspace.getConfiguration('arxmlTree');
+    const refreshMode = config.get<string>('refreshMode', 'onChange');
+    
+    // For onSave/manual modes, only parse the active document to reduce overhead
+    // Cross-file hover will use the stale index until a save or manual refresh
+    let allArxmlDocs: vscode.TextDocument[];
+    if (refreshMode === 'onChange') {
+      // Collect all open ARXML documents
+      allArxmlDocs = vscode.workspace.textDocuments.filter(doc => doc.languageId === 'arxml');
+    } else {
+      // onSave or manual: only parse the active document
+      const activeDoc = this.getActiveArxmlDocument();
+      allArxmlDocs = activeDoc ? [activeDoc] : [];
+    }
 
     if (allArxmlDocs.length === 0) {
       return;
@@ -415,11 +485,13 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
       }
     }
 
-    // Parse any missing or outdated documents
     if (docsToParse.length > 0) {
-      await this.parseDocuments(docsToParse);
+      const changedUris = await this.parseDocuments(docsToParse);
+      for (const uri of changedUris) {
+        this.removeDocumentFromIndex(uri);
+        this.indexDocument(uri);
+      }
     } else if (this.arpathIndex.size === 0 && this.parsedDocuments.size > 0) {
-      // If index is empty but we have parsed documents, rebuild the index
       this.rebuildArpathIndex();
     }
   }
@@ -443,8 +515,8 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
     return openDocs;
   }
 
-  private async parseDocuments(documents: vscode.TextDocument[]): Promise<boolean> {
-    let changed = false;
+  private async parseDocuments(documents: vscode.TextDocument[]): Promise<Set<string>> {
+    const changedUris = new Set<string>();
     for (const document of documents) {
       const uriString = document.uri.toString();
       const cached = this.parsedDocuments.get(uriString);
@@ -473,23 +545,17 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
             nameTextTags: options.nameTextTags,
             parseMode: options.parseMode
           });
-          changed = true;
+          changedUris.add(uriString);
         } else if (this.parsedDocuments.has(uriString)) {
           this.parsedDocuments.delete(uriString);
-          changed = true;
+          changedUris.add(uriString);
         }
       } catch (error) {
         vscode.window.showErrorMessage(`Failed to parse ARXML file ${document.uri.fsPath}: ${(error as Error).message}`);
       }
     }
 
-    // Rebuild the entire index from all parsed documents
-    if (changed) {
-      this.rebuildArpathIndex();
-      this.rebuildFilteredRoots();
-    }
-
-    return changed;
+    return changedUris;
   }
 
   private rebuildArpathIndex(): void {
@@ -498,6 +564,47 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
       this.indexTree(root, nextIndex);
     }
     this.arpathIndex = nextIndex;
+  }
+
+  private removeDocumentFromIndex(uri: string): void {
+    const keys = this.docArpathKeys.get(uri);
+    if (!keys) {
+      return;
+    }
+    for (const key of keys) {
+      const nodes = this.arpathIndex.get(key);
+      if (!nodes) {
+        continue;
+      }
+      const filtered = nodes.filter(node => node.file.toString() !== uri);
+      if (filtered.length === 0) {
+        this.arpathIndex.delete(key);
+      } else {
+        this.arpathIndex.set(key, filtered);
+      }
+    }
+    this.docArpathKeys.delete(uri);
+  }
+
+  private indexDocument(uri: string): void {
+    const entry = this.parsedDocuments.get(uri);
+    if (!entry) {
+      return;
+    }
+    const keys = new Set<string>();
+    const stack: ArxmlNode[] = [entry.root];
+    while (stack.length) {
+      const node = stack.pop()!;
+      const variants = buildArpathVariants(node.arpath);
+      for (const variant of variants) {
+        keys.add(variant);
+        const list = this.arpathIndex.get(variant) ?? [];
+        list.push(node);
+        this.arpathIndex.set(variant, list);
+      }
+      stack.push(...node.children);
+    }
+    this.docArpathKeys.set(uri, keys);
   }
 
   private getRootNodes(): ArxmlNode[] {
@@ -517,7 +624,11 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
     if (!this.parsedDocuments.has(uriString)) {
       const doc = vscode.workspace.textDocuments.find(d => d.uri.toString() === uriString);
       if (doc) {
-        await this.parseDocuments([doc]);
+        const changedUris = await this.parseDocuments([doc]);
+        for (const uri of changedUris) {
+          this.removeDocumentFromIndex(uri);
+          this.indexDocument(uri);
+        }
       }
     }
     return this.parsedDocuments.get(uriString)?.root;
