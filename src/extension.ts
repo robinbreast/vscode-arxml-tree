@@ -27,7 +27,12 @@ export async function activate(context: vscode.ExtensionContext) {
     customViewStore
   );
   context.subscriptions.push(integratedTreeProvider);
-  await customViewStore.ensureSeeded();
+  try {
+    await customViewStore.ensureSeeded();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    vscode.window.showErrorMessage(`Custom views failed to initialize: ${message}`);
+  }
   const viewSelectionsKey = 'arxmlTree.customViewSelections';
 
   treeView = vscode.window.createTreeView('arxml-integrated-view', { treeDataProvider: integratedTreeProvider });

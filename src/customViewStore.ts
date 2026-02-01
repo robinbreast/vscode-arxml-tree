@@ -62,7 +62,13 @@ export class CustomViewStore {
     if (!fileUri) {
       return;
     }
-    const bundled = await this.loadBundledViews();
+    let bundled: CustomViewConfig[] = [];
+    try {
+      bundled = await this.loadBundledViews();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      vscode.window.showErrorMessage(`Failed to load bundled custom views: ${message}`);
+    }
     const exists = await fileExists(fileUri);
     if (seeded) {
       if (!exists) {

@@ -3,7 +3,7 @@ Visualize and navigate AUTOSAR ARXML files directly inside VS Code. The extensio
 
 ## Installation
 1. Install the extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/).
-2. Open any `.arxml` file. The **ARXML Tree View** appears in the Activity Bar the first time the language is detected.
+2. Open any `.arxml` or `.cdd` file. The **ARXML Tree View** appears in the Activity Bar the first time the language is detected.
 3. Run `npm install` and `npm run esbuild` inside the repository if you are developing the extension locally.
 
 ## Features

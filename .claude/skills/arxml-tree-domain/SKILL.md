@@ -21,6 +21,7 @@ Guidelines
 - Filter modes can be per-field (`nameMode`, `arpathMode`, `elementMode`) and fall back to `mode`.
 - Handle errors with `vscode.window.showErrorMessage(...)`.
 - Avoid refactors when fixing a specific bug.
+- Do not create git commits; the user will review and commit changes manually.
 - Keep SOLID and DRY principles in design, implementation, and documentation.
 
 Indexing behavior

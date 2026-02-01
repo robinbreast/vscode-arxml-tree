@@ -30,7 +30,8 @@ Workflow checklist
 3. Avoid editing generated output in `out/` or `dist/`.
 4. Match existing TypeScript style and ESLint rules.
 5. Run `npm run compile` and `npm test` after changes when feasible.
-6. Keep SOLID and DRY principles in design, implementation, and documentation.
+6. Do not create git commits; the user will review and commit changes manually.
+7. Keep SOLID and DRY principles in design, implementation, and documentation.
 
 Gotchas
 - The extension activates on `onLanguage:arxml`.
