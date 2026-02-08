@@ -12,12 +12,15 @@ interface ElementFrame {
   uuid?: string;
   node?: ArxmlNode;
   shortName?: string;
+  containerParent?: ArxmlNode;
+  containerChildrenStart?: number;
 }
 
 interface ParseOptions {
   strict?: boolean;
   nameTags?: string[];
   nameTextTags?: string[];
+  includeUnnamedContainers?: boolean;
 }
 
 export async function parseArxmlDocument(
@@ -60,6 +63,11 @@ export async function parseArxmlDocument(
       startOffset: start,
       uuid: typeof node.attributes.UUID === 'string' ? node.attributes.UUID : undefined
     };
+    if (options.includeUnnamedContainers && !nameTags.has(node.name) && !nameTextTags.has(node.name)) {
+      const containerParent = arNodeStack[arNodeStack.length - 1];
+      frame.containerParent = containerParent;
+      frame.containerChildrenStart = containerParent.children.length;
+    }
     elementStack.push(frame);
   };
 
@@ -104,6 +112,34 @@ export async function parseArxmlDocument(
         arNodeStack.pop();
       }
     }
+
+    const parentNode = frame.containerParent;
+    const childrenStart = frame.containerChildrenStart;
+    if (!options.includeUnnamedContainers || frame.node || !parentNode || childrenStart === undefined || frame.tag === rootNode.element) {
+      return;
+    }
+
+    if (parentNode.children.length <= childrenStart) {
+      return;
+    }
+
+    const start = clampOffset(parseText, frame.startOffset);
+    const end = clampOffset(parseText, parser.position);
+    const containerChildren = parentNode.children.splice(childrenStart);
+    const containerNode: ArxmlNode = {
+      name: frame.tag,
+      arpath: `${parentNode.arpath}/@${frame.tag}:${start}`,
+      element: frame.tag,
+      file: uri,
+      range: new vscode.Range(positionAt(start), positionAt(end)),
+      uuid: frame.uuid,
+      parent: parentNode,
+      children: containerChildren
+    };
+    for (const child of containerChildren) {
+      child.parent = containerNode;
+    }
+    parentNode.children.splice(childrenStart, 0, containerNode);
   };
 
   await streamParse(parser, parseText);

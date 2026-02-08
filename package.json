@@ -164,6 +164,10 @@
         "icon": "$(filter)"
       },
       {
+        "command": "arxml-integrated-tree.showCddServiceTable",
+        "title": "ARTree: Show CDD Service Table"
+      },
+      {
         "command": "arxml-integrated-tree.applyRecentSearch",
         "title": "ARTree: Apply Recent Filter"
       },
@@ -341,6 +345,11 @@
           "group": "inline@1"
         },
         {
+          "command": "arxml-integrated-tree.showCddServiceTable",
+          "when": "view == arxml-integrated-view && viewItem == viewControlsRoot && arxmlTree.isCddFile == true",
+          "group": "inline@2"
+        },
+        {
           "command": "arxml-integrated-tree.editRecentFilter",
           "when": "view == arxml-integrated-view && viewItem == recentSearch",
           "group": "inline@1"
@@ -462,7 +471,7 @@
         "command": "arxml-integrated-tree.showCurrentFileSearch",
         "key": "ctrl+f",
         "mac": "cmd+f",
-        "when": "focusedView == arxml-integrated-view"
+        "when": "focusedView == arxml-integrated-view && viewFocus && !editorTextFocus"
       },
       {
         "command": "arxml-integrated-tree.clearFilter",

@@ -1,19 +1,86 @@
 [
   {
     "id": "builtin-cdd-overview",
-    "name": "CDD: Complex Device Description",
-    "description": "Complex Device Description definitions",
+    "name": "CDD: Overview",
+    "description": "Balanced CDD hierarchy with core containers and definitions",
     "filters": {
       "elementTags": [
         "ECUDOC",
+        "EXTSTORAGEITEMS",
+        "EXTSTORAGEITEM",
+        "ATTRCATS",
         "ATTRCAT",
+        "DEFATTS",
+        "DATAOBJATTS",
         "STRDEF",
+        "CSTRDEF",
+        "DATATYPEATTS",
         "ENUMDEF",
         "UNSDEF",
-        "CSTRDEF",
         "DIAGCLASSATTS",
         "DIAGINSTATTS",
         "ECUATTS"
+      ]
+    },
+    "nameTags": [
+      "SHORT-NAME",
+      "NAME"
+    ],
+    "nameTextTags": [
+      "TUV"
+    ],
+    "parseMode": "lenient",
+    "sort": "name"
+  },
+  {
+    "id": "builtin-cdd-services",
+    "name": "CDD: Services Focus",
+    "description": "Focus on diagnostic class/instance sections used for service authoring",
+    "filters": {
+      "elementTags": [
+        "ECUDOC",
+        "DEFATTS",
+        "DIAGCLASSATTS",
+        "DIAGINSTATTS",
+        "DIAGCLASS",
+        "DIAGINST",
+        "SERVICE",
+        "SIMPLECOMPCONT",
+        "DATAOBJ",
+        "SPECDATAOBJ",
+        "NEGRESCODEPROXIES",
+        "NEGRESCODEPROXY",
+        "ECUATTS",
+        "ATTRCATS",
+        "ATTRCAT"
+      ]
+    },
+    "nameTags": [
+      "SHORT-NAME",
+      "NAME"
+    ],
+    "nameTextTags": [
+      "TUV"
+    ],
+    "parseMode": "lenient",
+    "sort": "name"
+  },
+  {
+    "id": "builtin-cdd-data-types",
+    "name": "CDD: Data Types Focus",
+    "description": "Focus on data object and datatype definition sections",
+    "filters": {
+      "elementTags": [
+        "ECUDOC",
+        "DEFATTS",
+        "DATAOBJATTS",
+        "DATATYPEATTS",
+        "STRDEF",
+        "CSTRDEF",
+        "ENUMDEF",
+        "UNSDEF",
+        "ATTRCATS",
+        "ATTRCAT"
       ]
     },
     "nameTags": [

@@ -13,10 +13,17 @@ export class ArxmlHoverProvider implements vscode.HoverProvider {
 
         const { component, arpath, range } = reference;
 
-        const node = await this.treeProvider.findNodeWithArPath(arpath);
+        const node = await this.treeProvider.findNodeWithArPath(arpath, {
+            preferredUri: document.uri.toString(),
+            destType: component
+        });
 
         if (node) {
-            const commandUri = vscode.Uri.parse(`command:arxml-tree-view.gotoNode?${encodeURIComponent(JSON.stringify(arpath))}`);
+            const commandUri = vscode.Uri.parse(`command:arxml-tree-view.gotoNode?${encodeURIComponent(JSON.stringify({
+                arpath,
+                preferredUri: document.uri.toString(),
+                destType: component
+            }))}`);
             const isSameFile = node.file.toString() === document.uri.toString();
             const fileInfo = isSameFile ? '' : `\n\n📄 *${node.file.fsPath.split('/').pop()}*`;
             const markdownString = new vscode.MarkdownString(`[${component}: ${arpath}](${commandUri})${fileInfo}`);

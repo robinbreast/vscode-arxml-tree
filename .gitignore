@@ -5,3 +5,4 @@ node_modules
 *.vsix
 !pre-release/*.vsix
 .sisyphus/
+.vscode/arxmlTree.customViews.json

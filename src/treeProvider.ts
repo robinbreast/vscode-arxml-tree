@@ -4,6 +4,8 @@ import { parseArxmlDocument } from './arxmlParser';
 import { ArxmlNode, equalsArxmlNodes } from './arxmlNode';
 import { CustomViewConfig, CustomViewParseMode, CustomViewSort } from './customViewStore';
 import { OptimizedTreeProvider, LazyArxmlNode } from './optimizedTreeProvider';
+import { createDefaultViewBehaviors } from './viewBehaviorRegistry';
+import { DiagnosticServiceSummary, ViewBehavior } from './viewBehavior';
 
 export type TreeFilterMode = 'contains' | 'regex' | 'glob';
 
@@ -33,6 +35,7 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
   private customViewByUri: Map<string, CustomViewConfig | undefined> = new Map();
   private filteredRootsByUri: Map<string, ArxmlNode | undefined> = new Map();
   private filterByUri: Map<string, TreeFilterConfig | undefined> = new Map();
+  private readonly viewBehaviors: ViewBehavior[];
   
   private optimizedProvider: OptimizedTreeProvider;
   private static readonly LARGE_TREE_THRESHOLD = 1000;
@@ -43,6 +46,7 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
 
   constructor() {
     this.optimizedProvider = new OptimizedTreeProvider();
+    this.viewBehaviors = createDefaultViewBehaviors();
     this.disposables.push(
       vscode.workspace.onDidChangeTextDocument(this.onDidChangeTextDocument, this),
       vscode.workspace.onDidSaveTextDocument(this.onDidSaveTextDocument, this),
@@ -127,7 +131,7 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
 
     const editor = event.textEditor;
     if (editor.document.languageId === 'arxml' && event.kind === vscode.TextEditorSelectionChangeKind.Mouse) {
-      const lineNumber = event.selections[0].active.line + 1; // Line numbers are 0-based, so add 1
+      const lineNumber = event.selections[0].active.line;
       this.getDocumentRoot(editor.document.uri.toString()).then(rootNode => {
         if (!rootNode) {
           return;
@@ -154,6 +158,19 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
   }
 
   getTreeItem(node: ArxmlNode): vscode.TreeItem {
+    const view = this.customViewByUri.get(node.file.toString());
+    const behavior = this.resolveViewBehavior(view);
+    const presentation = behavior?.presentNode(node, view);
+
+    if (presentation) {
+      return {
+        label: presentation.label,
+        description: presentation.description,
+        collapsibleState: presentation.collapsibleState,
+        tooltip: presentation.tooltip
+      };
+    }
+
     return {
       label: node.name,
       collapsibleState: node.children.length > 0 ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
@@ -263,6 +280,31 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
     return this.customViewByUri.get(document.uri.toString());
   }
 
+  async getActiveServiceSummaries(): Promise<DiagnosticServiceSummary[]> {
+    const activeDoc = vscode.window.activeTextEditor?.document;
+    if (!activeDoc || activeDoc.languageId !== 'arxml') {
+      return [];
+    }
+
+    await this.ensureAllDocumentsParsed();
+    const uri = activeDoc.uri.toString();
+    const entry = this.parsedDocuments.get(uri);
+    if (!entry) {
+      return [];
+    }
+
+    const behavior = this.resolveViewBehavior(this.customViewByUri.get(uri));
+    if (!behavior?.collectServiceSummaries) {
+      return [];
+    }
+
+    return behavior.collectServiceSummaries(entry.root);
+  }
+
+  private resolveViewBehavior(view?: CustomViewConfig): ViewBehavior | undefined {
+    return this.viewBehaviors.find(candidate => candidate.matches(view));
+  }
+
   async updateCustomView(view: CustomViewConfig): Promise<void> {
     const targets = Array.from(this.customViewByUri.entries())
       .filter(([, value]) => value?.id === view.id)
@@ -303,12 +345,12 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
     return undefined;
   }
 
-  async findNodeWithArPath(targetLabel: string): Promise<ArxmlNode | undefined> {
+  async findNodeWithArPath(targetLabel: string, options?: { preferredUri?: string; destType?: string }): Promise<ArxmlNode | undefined> {
     // Ensure all open ARXML documents are parsed, not just the active one
     await this.ensureAllDocumentsParsed();
 
     const normalized = normalizeArpath(targetLabel);
-    const direct = this.findByArpath(normalized);
+    const direct = this.findByArpath(normalized, options);
     if (direct) {
       return direct;
     }
@@ -323,7 +365,7 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
 
     // Fallback: Search for the path as a text string in open documents
     // This helps find ECUC definitions that might not have SHORT-NAME structure
-    const fallback = await this.findByTextSearch(normalized);
+    const fallback = await this.findByTextSearch(normalized, options?.preferredUri);
     if (fallback) {
       return fallback;
     }
@@ -331,7 +373,7 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
     return undefined;
   }
 
-  private async findByTextSearch(arpath: string): Promise<ArxmlNode | undefined> {
+  private async findByTextSearch(arpath: string, preferredUri?: string): Promise<ArxmlNode | undefined> {
     const pathParts = arpath.split('/').filter(Boolean);
     if (pathParts.length === 0) {
       return undefined;
@@ -340,7 +382,17 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
     // Search for the last part of the path in all open documents
     const searchTerm = pathParts[pathParts.length - 1];
     const escapedTerm = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const documents = vscode.workspace.textDocuments.filter(doc => doc.languageId === 'arxml');
+    const documents = vscode.workspace.textDocuments
+      .filter(doc => doc.languageId === 'arxml')
+      .sort((left, right) => {
+        if (preferredUri && left.uri.toString() === preferredUri) {
+          return -1;
+        }
+        if (preferredUri && right.uri.toString() === preferredUri) {
+          return 1;
+        }
+        return left.uri.fsPath.localeCompare(right.uri.fsPath);
+      });
 
     for (const doc of documents) {
       const text = doc.getText();
@@ -532,7 +584,8 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
           {
             strict: options.parseMode === 'strict',
             nameTags: options.nameTags,
-            nameTextTags: options.nameTextTags
+            nameTextTags: options.nameTextTags,
+            includeUnnamedContainers: options.parseMode === 'lenient'
           }
         );
         if (root) {
@@ -675,21 +728,125 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
     return currentNode;
   }
 
-  private findByArpath(target: string): ArxmlNode | undefined {
-    const variants = buildArpathVariants(target);
+  private findByArpath(target: string, options?: { preferredUri?: string; destType?: string }): ArxmlNode | undefined {
+    const normalizedTarget = normalizeArpath(target);
+    const strictMatches = this.arpathIndex.get(normalizedTarget) ?? [];
+    const bestStrict = this.pickBestArpathMatch(strictMatches, target, options);
+    if (bestStrict) {
+      return bestStrict;
+    }
+
+    const variants = buildArpathVariants(target).filter(variant => variant !== normalizedTarget);
+    const indexedCandidates: ArxmlNode[] = [];
     for (const variant of variants) {
       const matches = this.arpathIndex.get(variant);
       if (matches && matches.length > 0) {
-        return matches[0];
+        indexedCandidates.push(...matches);
       }
     }
+    const bestIndexed = this.pickBestArpathMatch(indexedCandidates, target, options);
+    if (bestIndexed) {
+      return bestIndexed;
+    }
+
+    const scanCandidates: ArxmlNode[] = [];
     for (const root of this.getRootNodes()) {
-      const found = this.findInTree(root, node => variants.some(variant => node.arpath === variant || node.arpath.endsWith(variant)));
-      if (found) {
-        return found;
+      const stack: ArxmlNode[] = [root];
+      while (stack.length) {
+        const node = stack.pop()!;
+        if (variants.some(variant => node.arpath === variant || node.arpath.endsWith(variant))) {
+          scanCandidates.push(node);
+        }
+        stack.push(...node.children);
       }
     }
-    return undefined;
+    return this.pickBestArpathMatch(scanCandidates, target, options);
+  }
+
+  private pickBestArpathMatch(candidates: ArxmlNode[], target: string, options?: { preferredUri?: string; destType?: string }): ArxmlNode | undefined {
+    if (!candidates.length) {
+      return undefined;
+    }
+    const normalizedTarget = normalizeArpath(target);
+    const dest = options?.destType?.toUpperCase();
+    const deduped = new Map<string, ArxmlNode>();
+    for (const candidate of candidates) {
+      const key = `${candidate.file.toString()}::${candidate.arpath}::${candidate.range.start.line}:${candidate.range.start.character}`;
+      if (!deduped.has(key)) {
+        deduped.set(key, candidate);
+      }
+    }
+
+    const scored = Array.from(deduped.values()).map(candidate => {
+      let score = 0;
+      const normalizedCandidate = normalizeArpath(candidate.arpath);
+      if (options?.preferredUri && candidate.file.toString() === options.preferredUri) {
+        score += 1000;
+      }
+      if (normalizedCandidate === normalizedTarget) {
+        score += 400;
+      } else if (normalizedTarget.endsWith(normalizedCandidate) || normalizedCandidate.endsWith(normalizedTarget)) {
+        score += 150;
+      }
+      if (dest) {
+        const element = candidate.element.toUpperCase();
+        if (element === dest) {
+          score += 250;
+        } else if (dest.includes(element) || element.includes(dest)) {
+          score += 80;
+        }
+      }
+      score += this.computeSegmentAlignmentScore(normalizedCandidate, normalizedTarget);
+      score += Math.min(normalizedCandidate.length, 200);
+      return { candidate, score };
+    });
+
+    scored.sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+      if (right.candidate.arpath.length !== left.candidate.arpath.length) {
+        return right.candidate.arpath.length - left.candidate.arpath.length;
+      }
+      return left.candidate.file.fsPath.localeCompare(right.candidate.file.fsPath);
+    });
+
+    return scored[0]?.candidate;
+  }
+
+  private computeSegmentAlignmentScore(candidateArpath: string, targetArpath: string): number {
+    const candidateSegments = candidateArpath.split('/').filter(Boolean).filter(segment => !segment.startsWith('@'));
+    const targetSegments = targetArpath.split('/').filter(Boolean);
+    if (!candidateSegments.length || !targetSegments.length) {
+      return 0;
+    }
+
+    let suffixMatches = 0;
+    let candidateIndex = candidateSegments.length - 1;
+    let targetIndex = targetSegments.length - 1;
+    while (candidateIndex >= 0 && targetIndex >= 0) {
+      if (candidateSegments[candidateIndex] !== targetSegments[targetIndex]) {
+        break;
+      }
+      suffixMatches += 1;
+      candidateIndex -= 1;
+      targetIndex -= 1;
+    }
+
+    let subsequenceMatches = 0;
+    let scanIndex = 0;
+    for (const segment of candidateSegments) {
+      while (scanIndex < targetSegments.length && targetSegments[scanIndex] !== segment) {
+        scanIndex += 1;
+      }
+      if (scanIndex < targetSegments.length && targetSegments[scanIndex] === segment) {
+        subsequenceMatches += 1;
+        scanIndex += 1;
+      }
+    }
+
+    const fullOrderedMatch = subsequenceMatches === targetSegments.length ? 1 : 0;
+    return (suffixMatches * 120) + (subsequenceMatches * 25) + (fullOrderedMatch * 300);
   }
 
   private getRootAliases(rootName: string): Set<string> {

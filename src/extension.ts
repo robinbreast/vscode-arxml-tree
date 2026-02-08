@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { ArxmlTreeProvider, BookmarkTreeProvider, TreeFilterConfig } from './treeProvider';
+import { DiagnosticServiceSummary } from './viewBehavior';
 import { ArxmlNode } from './arxmlNode';
 import { ArxmlHoverProvider } from './hoverProvider';
 import { CustomViewStore, CustomViewConfig, CustomViewParseMode, CustomViewUuidFilter, CustomViewSort } from './customViewStore';
@@ -66,7 +67,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(bookmarkTreeView.onDidChangeSelection((event) => {
     const selectedItem = event.selection[0];
     if (selectedItem) {
-      vscode.commands.executeCommand("arxml-tree-view.revealInFile", selectedItem);
+      vscode.commands.executeCommand('arxml-tree-view.revealInFile', selectedItem, { revealTree: true });
     }
   }));
 
@@ -104,6 +105,12 @@ export async function activate(context: vscode.ExtensionContext) {
   const updateToggleContext = async () => {
     await vscode.commands.executeCommand('setContext', 'arxmlTree.filterActive', Boolean(integratedTreeProvider.getCurrentFilter()));
     await vscode.commands.executeCommand('setContext', 'arxmlTree.viewActive', Boolean(integratedTreeProvider.getCurrentCustomView()));
+  };
+
+  const updateFileTypeContext = async () => {
+    const activeDoc = vscode.window.activeTextEditor?.document;
+    const isCddFile = Boolean(activeDoc && activeDoc.languageId === 'arxml' && activeDoc.uri.fsPath.toLowerCase().endsWith('.cdd'));
+    await vscode.commands.executeCommand('setContext', 'arxmlTree.isCddFile', isCddFile);
   };
 
   const applyDraftUpdate = async (partial: Partial<TreeFilterConfig>) => {
@@ -315,21 +322,26 @@ export async function activate(context: vscode.ExtensionContext) {
     void arxmlTreeProvider.setCustomViewForDocument(activeDoc, undefined);
     void persistSelection(context, viewSelectionsKey, activeDoc, null);
   }));
-  context.subscriptions.push(vscode.commands.registerCommand('arxml-tree-view.revealInFile', async (node: ArxmlNode) => {
+  context.subscriptions.push(vscode.commands.registerCommand('arxml-tree-view.revealInFile', async (node: ArxmlNode, options?: { revealTree?: boolean }) => {
     if (node) {
       await revealPosition(node.file, node.range);
-      // find node to select in tree view
-      const treeNode = arxmlTreeProvider.findNode(node);
-      if (treeNode) {
-        // reveal node in tree view
-        treeView.reveal(treeNode, { select: true, focus: true, expand: true });
+      if (options?.revealTree) {
+        const treeNode = arxmlTreeProvider.findNode(node) ?? node;
+        if (treeNode) {
+          treeView.reveal(treeNode, { select: true, focus: true, expand: true });
+        }
       }
     }
   }));
   context.subscriptions.push(vscode.commands.registerCommand('arxml-tree-view.focusNode', async (node: ArxmlNode) => {
     if (node) {
       // find node to select in tree view
-      const treeNode = arxmlTreeProvider.findNode(node);
+      let treeNode = arxmlTreeProvider.findNode(node);
+      let cursor = node.parent;
+      while (!treeNode && cursor) {
+        treeNode = arxmlTreeProvider.findNode(cursor);
+        cursor = cursor.parent;
+      }
       if (treeNode) {
         // reveal node in tree view
         treeView.reveal(treeNode, { select: false, focus: true, expand: true });
@@ -399,8 +411,11 @@ export async function activate(context: vscode.ExtensionContext) {
   }));
 
   // Handle selecting bookmark command
-  context.subscriptions.push(vscode.commands.registerCommand('arxml-tree-view.gotoNode', async (arpath: string) => {
-    const node = await arxmlTreeProvider.findNodeWithArPath(arpath);
+  context.subscriptions.push(vscode.commands.registerCommand('arxml-tree-view.gotoNode', async (payload: string | { arpath: string; preferredUri?: string; destType?: string }) => {
+    const arpath = typeof payload === 'string' ? payload : payload.arpath;
+    const preferredUri = typeof payload === 'string' ? undefined : payload.preferredUri;
+    const destType = typeof payload === 'string' ? undefined : payload.destType;
+    const node = await arxmlTreeProvider.findNodeWithArPath(arpath, { preferredUri, destType });
     if (node) {
       await revealPosition(node.file, node.range);
       // reveal node in tree view
@@ -408,6 +423,32 @@ export async function activate(context: vscode.ExtensionContext) {
     } else {
       vscode.window.showInformationMessage(`Node with ARPath ${arpath} not found`);
     }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand('arxml-integrated-tree.showCddServiceTable', async () => {
+    const summaries = await arxmlTreeProvider.getActiveServiceSummaries();
+    if (!summaries.length) {
+      vscode.window.showInformationMessage('No CDD diagnostic services found in the active ARXML/CDD document.');
+      return;
+    }
+    const panel = vscode.window.createWebviewPanel(
+      'cddServiceTable',
+      'CDD Service Table',
+      vscode.ViewColumn.Beside,
+      { enableFindWidget: true, enableCommandUris: true, enableScripts: true }
+    );
+    panel.webview.html = renderCddServiceTableHtml(summaries);
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand('arxml-tree-view.openLocation', async (payload: { file: string; line: number; column?: number }) => {
+    if (!payload?.file || !payload?.line) {
+      return;
+    }
+    const uri = vscode.Uri.file(payload.file);
+    const line = Math.max(0, payload.line - 1);
+    const column = Math.max(0, (payload.column ?? 1) - 1);
+    const range = new vscode.Range(line, column, line, column);
+    await revealPosition(uri, range);
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand('arxml-tree-view.applyFilter', async () => {
@@ -421,9 +462,11 @@ export async function activate(context: vscode.ExtensionContext) {
 
   await updateFilterModeContext(integratedTreeProvider.getDraftFilter());
   await updateToggleContext();
+  await updateFileTypeContext();
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => {
     void updateFilterModeContext(integratedTreeProvider.getDraftFilter());
     void updateToggleContext();
+    void updateFileTypeContext();
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand('arxml-tree-view.clearFilter', async () => {
@@ -770,7 +813,33 @@ async function revealPosition(uri: vscode.Uri, range: vscode.Range): Promise<voi
   if (!document) {
     document = await vscode.workspace.openTextDocument(uri);
   }
-  await vscode.window.showTextDocument(document, { selection: range, preview: false });
+
+  const visible = vscode.window.visibleTextEditors.find(editor => editor.document.uri.toString() === uri.toString());
+  if (visible) {
+    await vscode.window.showTextDocument(visible.document, {
+      viewColumn: visible.viewColumn,
+      selection: range,
+      preserveFocus: false,
+      preview: true
+    });
+    return;
+  }
+
+  let preferredColumn: vscode.ViewColumn | undefined;
+  for (const group of vscode.window.tabGroups.all) {
+    const hasTarget = group.tabs.some(tab => tab.input instanceof vscode.TabInputText && tab.input.uri.toString() === uri.toString());
+    if (hasTarget) {
+      preferredColumn = group.viewColumn;
+      break;
+    }
+  }
+
+  await vscode.window.showTextDocument(document, {
+    viewColumn: preferredColumn,
+    selection: range,
+    preserveFocus: false,
+    preview: true
+  });
 }
 
 async function promptImportOptions(): Promise<{ skipConflicts?: boolean; overwriteConflicts?: boolean; generateNewIds?: boolean } | undefined> {
@@ -836,4 +905,164 @@ function showImportDetails(result: { imported: number; skipped: number; errors: 
   }).then(doc => {
     vscode.window.showTextDocument(doc, { preview: true });
   });
+}
+
+function renderCddServiceTableHtml(rows: DiagnosticServiceSummary[]): string {
+  const tableRows = rows.map(row => {
+    const locationCommand = encodeURIComponent(JSON.stringify({ file: row.file, line: row.line, column: row.column }));
+    const locationLink = `command:arxml-tree-view.openLocation?${locationCommand}`;
+    const searchText = [
+      row.diagClass,
+      row.diagInstance,
+      row.serviceName,
+      row.serviceType,
+      row.semantic,
+      row.sid,
+      row.subFunction,
+      row.identifierKind,
+      row.identifier,
+      row.dataLength,
+      row.request,
+      row.responses,
+      `${row.line}:${row.column}`
+    ].join(' ').toLowerCase();
+    const serviceDisplay = row.serviceType && row.serviceType !== row.serviceName
+      ? `${row.serviceType} (${row.serviceName})`
+      : row.serviceName;
+    const identifierDisplay = row.identifier && row.identifier !== '-'
+      ? `${row.identifierKind && row.identifierKind !== '-' ? `${row.identifierKind} ` : ''}${row.identifier}`
+      : '-';
+    return `<tr data-search="${escapeHtml(searchText)}">
+      <td>${escapeHtml(row.diagClass)}</td>
+      <td>${escapeHtml(row.diagInstance)}</td>
+      <td>${escapeHtml(serviceDisplay)}</td>
+      <td>${escapeHtml(row.sid)}</td>
+      <td>${escapeHtml(identifierDisplay)}</td>
+      <td>${escapeHtml(row.dataLength)}</td>
+      <td>${escapeHtml(row.request)}</td>
+      <td>${escapeHtml(row.responses)}</td>
+      <td><a href="${locationLink}">${escapeHtml(`${row.line}:${row.column}`)}</a></td>
+    </tr>`;
+  }).join('');
+
+  return `<!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      body { font-family: var(--vscode-font-family); margin: 12px; }
+      .hint { color: var(--vscode-descriptionForeground); margin-bottom: 8px; }
+      input { width: 360px; max-width: 100%; margin-bottom: 10px; padding: 6px; }
+      .filter-row input { width: 100%; max-width: none; margin: 0; padding: 4px; font-size: 11px; }
+      .table-wrap { max-height: calc(100vh - 170px); overflow: auto; border: 1px solid var(--vscode-panel-border); }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      th, td { border: 1px solid var(--vscode-panel-border); padding: 6px; text-align: left; vertical-align: top; }
+      thead tr:first-child th { position: sticky; top: 0; background: var(--vscode-editor-background); z-index: 3; }
+      thead tr.filter-row th { position: sticky; top: 30px; background: var(--vscode-editor-background); z-index: 2; }
+      tr:nth-child(even) { background: color-mix(in srgb, var(--vscode-editor-background) 92%, var(--vscode-editor-foreground) 8%); }
+      .small { color: var(--vscode-descriptionForeground); font-size: 11px; margin-top: 8px; }
+    </style>
+  </head>
+  <body>
+    <div class="hint">CDD DID/Routine overview with compact columns: service, SID, identifier, inferred UDS frames. Click line:column to jump to source.</div>
+    <input id="q" type="search" placeholder="Global filter (service, SID, DID/RID, semantic, NRC...)" />
+    <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Diag Class</th>
+          <th>Diag Instance</th>
+          <th>Service</th>
+          <th>SID</th>
+          <th>Identifier</th>
+          <th>Data Len*</th>
+          <th>UDS Request</th>
+          <th>UDS Response</th>
+          <th>Location</th>
+        </tr>
+        <tr class="filter-row">
+          <th><input data-col="0" placeholder="filter" /></th>
+          <th><input data-col="1" placeholder="filter" /></th>
+          <th><input data-col="2" placeholder="filter" /></th>
+          <th><input data-col="3" placeholder="filter" /></th>
+          <th><input data-col="4" placeholder="filter" /></th>
+          <th><input data-col="5" placeholder="filter" /></th>
+          <th><input data-col="6" placeholder="filter" /></th>
+          <th><input data-col="7" placeholder="filter" /></th>
+          <th><input data-col="8" placeholder="filter" /></th>
+        </tr>
+      </thead>
+      <tbody id="rows">${tableRows}</tbody>
+    </table>
+    </div>
+    <div class="small">Data Len is inferred minimum payload size: fixed SID/DID(+subfunction) bytes plus detected payload objects.</div>
+    <script>
+      const q = document.getElementById('q');
+      const rows = Array.from(document.querySelectorAll('#rows tr'));
+      const columnFilters = Array.from(document.querySelectorAll('.filter-row input'));
+
+      function fuzzyMatch(text, query) {
+        if (!query) {
+          return true;
+        }
+        let qi = 0;
+        const hay = text.toLowerCase();
+        const needle = query.toLowerCase();
+        for (let i = 0; i < hay.length && qi < needle.length; i += 1) {
+          if (hay[i] === needle[qi]) {
+            qi += 1;
+          }
+        }
+        return qi === needle.length;
+      }
+
+      function matchesGlobal(text, query) {
+        if (!query) {
+          return true;
+        }
+        const tokens = query.split(/\s+/).filter(Boolean);
+        if (tokens.length === 0) {
+          return true;
+        }
+        return tokens.every(token => text.includes(token) || fuzzyMatch(text, token));
+      }
+
+      function applyFilters() {
+        const globalTerm = q.value.toLowerCase().trim();
+        const columnTerms = columnFilters.map(input => input.value.toLowerCase().trim());
+        rows.forEach(row => {
+          const cells = Array.from(row.querySelectorAll('td'));
+          const globalText = row.dataset.search || row.textContent.toLowerCase();
+          const globalPass = matchesGlobal(globalText, globalTerm);
+          const columnPass = columnTerms.every((term, index) => {
+            if (!term) {
+              return true;
+            }
+            const cellText = (cells[index]?.textContent || '').toLowerCase();
+            return cellText.includes(term) || fuzzyMatch(cellText, term);
+          });
+          row.style.display = globalPass && columnPass ? '' : 'none';
+        });
+      }
+
+      q.addEventListener('input', applyFilters);
+      q.addEventListener('keyup', applyFilters);
+      columnFilters.forEach(input => {
+        input.addEventListener('input', applyFilters);
+        input.addEventListener('keyup', applyFilters);
+      });
+      applyFilters();
+    </script>
+  </body>
+  </html>`;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
