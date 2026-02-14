@@ -1,6 +1,12 @@
 # ARXML Tree Viewer
 Visualize and navigate AUTOSAR ARXML files directly inside VS Code. The extension parses the document into a tree, keeps bookmarks that survive reloads, and lets you jump between references without losing your spot.
 
+## Documentation Map
+- [`README.md`](README.md) (this file): user-facing usage, features, and contributor quick workflow.
+- [`AGENTS.md`](AGENTS.md): engineering conventions and repository guardrails for coding agents/contributors.
+- [`.claude/skills/arxml-tree-domain/references/custom-views.md`](.claude/skills/arxml-tree-domain/references/custom-views.md): custom-view JSON schema and examples.
+- [`.claude/skills/*/SKILL.md`](.claude/skills/): task-focused agent skills.
+
 ## Installation
 1. Install the extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/).
 2. Open any `.arxml` or `.cdd` file. The **ARXML Tree View** appears in the Activity Bar the first time the language is detected.
@@ -49,7 +55,7 @@ Create and manage custom views to reshape the tree structure:
 **Storage Options:**
 - Change storage scope with `arxmlTree.customViewStorageScope` setting
 - Views persist across workspace sessions
-- See `docs/custom-views.md` for full schema and examples
+- See [`.claude/skills/arxml-tree-domain/references/custom-views.md`](.claude/skills/arxml-tree-domain/references/custom-views.md) for full schema and examples
 
 ### Bookmarks
 Right-click any tree node and choose **ARTree: Add bookmark**. The bookmark appears in the **Bookmarks** tree. Use the context menu (or the command palette) to remove entries. Selecting a bookmark reveals it in the editor and tree.
@@ -58,6 +64,8 @@ Right-click any tree node and choose **ARTree: Add bookmark**. The bookmark appe
 Move the cursor over a `REF DEST="..."` element to get a trusted link. The extension searches across **all open ARXML files** to find the target. If found in a different file, the hover shows a 📄 icon with the filename. Clicking the link executes **ARTree: Goto node**, which resolves the ARPATH and reveals it in the correct file, even opening the file if needed.
 
 ## Commands
+Use the Command Palette and search `ARTree:` to discover commands. The canonical manifest is in [`package.json`](package.json) under `contributes.commands`.
+
 **Tree Navigation:**
 - `ARTree: Refresh` — rebuild the tree for the active ARXML file
 - `ARTree: Reveal in file` — jump to the range represented by the selected node
@@ -87,7 +95,7 @@ The extension is optimized for large ARXML files:
 - Files with 1000+ nodes automatically use optimized rendering
 - Lazy loading and chunked processing for large trees
 - Intelligent caching with background processing
-- Debounced filter application (300ms delay) to prevent lag
+- Debounced filter application (200ms default, configurable 100-5000ms) to prevent lag
 
 **Search Performance:**
 - Real-time result counting for applied filters
@@ -128,10 +136,20 @@ The repository includes comprehensive unit and integration tests:
 - Parser and bookmark manager tests
 
 **Development:**
-- Run `npm test` to execute all tests
-- Run `npm run compile` for TypeScript compilation
+- Run `npm run compile` first to catch TypeScript errors early
 - Run `npm run lint` for code quality checks
+- Run `npm test` to execute all tests (`pretest` runs compile + lint first)
 - Run `npm run esbuild` for development builds
 - Run `npm run vscode:prepublish` for production builds
+
+**Single source of truth:**
+- Behavior/features in [`README.md`](README.md)
+- Engineering conventions in [`AGENTS.md`](AGENTS.md)
+- Command/settings definitions in [`package.json`](package.json)
+- Custom view schema in [`.claude/skills/arxml-tree-domain/references/custom-views.md`](.claude/skills/arxml-tree-domain/references/custom-views.md)
+
+TypeScript strict checks are enabled (`noImplicitReturns`, `noFallthroughCasesInSwitch`, `noUnusedParameters`).
+Prefix intentionally unused function parameters with `_` (for example, `_token`) to satisfy compilation.
+ESLint uses [`eslint.config.js`](eslint.config.js) (flat config, ESLint 9+) and is run via `npm run lint`.
 
 Contributions are welcome—please document new commands or settings in this README and ensure tests pass.

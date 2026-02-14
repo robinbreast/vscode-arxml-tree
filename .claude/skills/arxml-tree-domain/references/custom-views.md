@@ -6,8 +6,8 @@ Custom views are stored in a JSON file and applied per ARXML document. The main 
 
 The file location depends on `arxmlTree.customViewStorageScope`:
 
-- `workspace` (default): `.vscode/arxmlTree.customViews.json`
-- `global`: `<extension global storage>/customViews.json`
+- `workspace` (default): [`.vscode/arxmlTree.customViews.json`](../../../../.vscode/arxmlTree.customViews.json)
+- global: <extension global storage>/customViews.json (extension-managed path)
 
 Use **ARTree: Edit custom views file** to open the correct file.
 
@@ -53,6 +53,8 @@ Optional:
 - `nameTags`: Tags that should provide a name. Default: `["SHORT-NAME"]`.
 - `nameTextTags`: Tags that provide text for name tags when they appear as children (default: empty).
 - `parseMode`: `strict` (default) or `lenient`.
+  - `strict`: fail on malformed XML structures for stricter parsing.
+  - `lenient`: continue parsing with best-effort recovery for imperfect inputs.
 - `sort`: `name` or `arpath`.
 
 ## Examples

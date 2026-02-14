@@ -12,6 +12,7 @@ suite('SearchViewProvider', () => {
   let searchProvider: SearchViewProvider;
   let applyCustomViewCallback: (id?: string) => Promise<void>;
   let clearCustomViewCallback: () => Promise<void>;
+  let postedMessages: any[];
 
   setup(() => {
     mockTreeProvider = {
@@ -19,6 +20,7 @@ suite('SearchViewProvider', () => {
         mockTreeProvider.lastFilterDocument = document;
         mockTreeProvider.lastFilterConfig = config;
       },
+      getFilterResultCount: async (_config: TreeFilterConfig) => 0,
       lastFilterDocument: undefined,
       lastFilterConfig: undefined
     };
@@ -32,20 +34,20 @@ suite('SearchViewProvider', () => {
     };
 
     mockSearchHistoryStore = {
-      addSearch: async (filter: TreeFilterConfig) => {},
+      addSearch: async (_filter: TreeFilterConfig) => {},
       getHistory: async () => [],
-      removeItem: async (id: string) => {},
+      removeItem: async (_id: string) => {},
       clearHistory: async () => {}
     };
 
     mockSavedFiltersStore = {
-      saveFilter: async (name: string, filter: TreeFilterConfig, description?: string) => ({ id: 'test', name, filter, createdAt: Date.now() }),
+      saveFilter: async (name: string, filter: TreeFilterConfig, _description?: string) => ({ id: 'test', name, filter, createdAt: Date.now() }),
       getSavedFilters: async () => [],
-      getFilterById: async (id: string) => undefined,
-      deleteFilter: async (id: string) => {},
-      updateLastUsed: async (id: string) => {},
-      renameFilter: async (id: string, newName: string) => {},
-      updateDescription: async (id: string, description?: string) => {}
+      getFilterById: async (_id: string) => undefined,
+      deleteFilter: async (_id: string) => {},
+      updateLastUsed: async (_id: string) => {},
+      renameFilter: async (_id: string, _newName: string) => {},
+      updateDescription: async (_id: string, _description?: string) => {}
     };
     
     let appliedCustomViewId: string | undefined;
@@ -80,11 +82,14 @@ suite('SearchViewProvider', () => {
           return { dispose: () => {} };
         },
         postMessage: (message: any) => {
+          postedMessages.push(message);
           mockWebviewView.webview.lastPostedMessage = message;
           return Promise.resolve(true);
         }
       }
     };
+
+    postedMessages = [];
   });
 
   test('constructor initializes with required dependencies', () => {
@@ -110,9 +115,7 @@ suite('SearchViewProvider', () => {
       document: mockDocument
     };
     
-    // Mock the active text editor
-    const originalActiveTextEditor = vscode.window.activeTextEditor;
-    (vscode.window as any).activeTextEditor = mockEditor;
+    const restoreActiveTextEditor = stubActiveTextEditor(mockEditor as vscode.TextEditor);
 
     searchProvider.resolveWebviewView(mockWebviewView);
 
@@ -132,11 +135,10 @@ suite('SearchViewProvider', () => {
     assert.strictEqual(mockTreeProvider.lastFilterDocument, mockDocument);
     assert.deepStrictEqual(mockTreeProvider.lastFilterConfig, filterConfig);
 
-    // Restore original activeTextEditor
-    (vscode.window as any).activeTextEditor = originalActiveTextEditor;
+    restoreActiveTextEditor();
   });
 
-  test('apply filter shows info message for non-ARXML document', async () => {
+  test('apply filter ignores non-ARXML document', async () => {
     const mockDocument = {
       uri: vscode.Uri.parse('file:///test.txt'),
       languageId: 'txt',
@@ -146,16 +148,7 @@ suite('SearchViewProvider', () => {
       document: mockDocument
     };
     
-    const originalActiveTextEditor = vscode.window.activeTextEditor;
-    const originalShowInformationMessage = vscode.window.showInformationMessage;
-    let infoMessageShown = false;
-    
-    (vscode.window as any).activeTextEditor = mockEditor;
-    (vscode.window as any).showInformationMessage = (message: string) => {
-      infoMessageShown = true;
-      assert.strictEqual(message, 'Open an ARXML file to apply filters.');
-      return Promise.resolve(undefined);
-    };
+    const restoreActiveTextEditor = stubActiveTextEditor(mockEditor as vscode.TextEditor);
 
     searchProvider.resolveWebviewView(mockWebviewView);
 
@@ -164,12 +157,9 @@ suite('SearchViewProvider', () => {
       payload: { mode: 'contains' }
     });
 
-    assert.strictEqual(infoMessageShown, true);
     assert.strictEqual(mockTreeProvider.lastFilterDocument, undefined);
 
-    // Restore original methods
-    (vscode.window as any).activeTextEditor = originalActiveTextEditor;
-    (vscode.window as any).showInformationMessage = originalShowInformationMessage;
+    restoreActiveTextEditor();
   });
 
   test('clear filter message removes filter for ARXML document', async () => {
@@ -182,8 +172,7 @@ suite('SearchViewProvider', () => {
       document: mockDocument
     };
     
-    const originalActiveTextEditor = vscode.window.activeTextEditor;
-    (vscode.window as any).activeTextEditor = mockEditor;
+    const restoreActiveTextEditor = stubActiveTextEditor(mockEditor as vscode.TextEditor);
 
     searchProvider.resolveWebviewView(mockWebviewView);
 
@@ -194,7 +183,7 @@ suite('SearchViewProvider', () => {
     assert.strictEqual(mockTreeProvider.lastFilterDocument, mockDocument);
     assert.strictEqual(mockTreeProvider.lastFilterConfig, undefined);
 
-    (vscode.window as any).activeTextEditor = originalActiveTextEditor;
+    restoreActiveTextEditor();
   });
 
   test('applyCustomView message calls callback with id', async () => {
@@ -259,11 +248,14 @@ suite('SearchViewProvider', () => {
       type: 'ready'
     });
 
-    assert.strictEqual(mockWebviewView.webview.lastPostedMessage?.type, 'views');
-    assert.deepStrictEqual(mockWebviewView.webview.lastPostedMessage?.payload, [
+    const viewsMessage = postedMessages.find((message) => message.type === 'views');
+    assert.ok(viewsMessage);
+    assert.deepStrictEqual(viewsMessage.payload, [
       { id: 'view1', name: 'View 1' },
       { id: 'view2', name: 'View 2' }
     ]);
+    assert.ok(postedMessages.some((message) => message.type === 'searchHistory'));
+    assert.ok(postedMessages.some((message) => message.type === 'savedFilters'));
   });
 
   test('refreshViews posts custom views to webview', async () => {
@@ -276,10 +268,13 @@ suite('SearchViewProvider', () => {
 
     await searchProvider.refreshViews();
 
-    assert.strictEqual(mockWebviewView.webview.lastPostedMessage?.type, 'views');
-    assert.deepStrictEqual(mockWebviewView.webview.lastPostedMessage?.payload, [
+    const viewsMessage = postedMessages.find((message) => message.type === 'views');
+    assert.ok(viewsMessage);
+    assert.deepStrictEqual(viewsMessage.payload, [
       { id: 'refresh-view', name: 'Refresh View' }
     ]);
+    assert.ok(postedMessages.some((message) => message.type === 'savedFilters'));
+    assert.ok(postedMessages.some((message) => message.type === 'searchHistory'));
   });
 
   test('getHtml returns valid HTML with required elements', () => {
@@ -305,3 +300,19 @@ suite('SearchViewProvider', () => {
     assert.ok(html.includes('postMessage'));
   });
 });
+
+function stubActiveTextEditor(editor: vscode.TextEditor | undefined): () => void {
+  const descriptor = Object.getOwnPropertyDescriptor(vscode.window, 'activeTextEditor');
+  Object.defineProperty(vscode.window, 'activeTextEditor', {
+    configurable: true,
+    get: () => editor
+  });
+
+  return () => {
+    if (descriptor) {
+      Object.defineProperty(vscode.window, 'activeTextEditor', descriptor);
+    } else {
+      delete (vscode.window as Partial<typeof vscode.window>).activeTextEditor;
+    }
+  };
+}

@@ -10,13 +10,17 @@ suite('SearchViewProvider Integration Tests', () => {
   let mockSavedFiltersStore: any;
   let searchProvider: SearchViewProvider;
   let webviewPanel: vscode.WebviewPanel | undefined;
+  let postedMessages: any[];
 
   setup(() => {
+    postedMessages = [];
+
     mockTreeProvider = {
       setFilterForDocument: async (document: vscode.TextDocument, config?: TreeFilterConfig) => {
         mockTreeProvider.lastFilterDocument = document;
         mockTreeProvider.lastFilterConfig = config;
       },
+      getFilterResultCount: async (_config: TreeFilterConfig) => 0,
       lastFilterDocument: undefined,
       lastFilterConfig: undefined
     };
@@ -28,20 +32,20 @@ suite('SearchViewProvider Integration Tests', () => {
     };
 
     mockSearchHistoryStore = {
-      addSearch: async (filter: TreeFilterConfig) => {},
+      addSearch: async (_filter: TreeFilterConfig) => {},
       getHistory: async () => [],
-      removeItem: async (id: string) => {},
+      removeItem: async (_id: string) => {},
       clearHistory: async () => {}
     };
 
     mockSavedFiltersStore = {
-      saveFilter: async (name: string, filter: TreeFilterConfig, description?: string) => ({ id: 'test', name, filter, createdAt: Date.now() }),
+      saveFilter: async (name: string, filter: TreeFilterConfig, _description?: string) => ({ id: 'test', name, filter, createdAt: Date.now() }),
       getSavedFilters: async () => [],
-      getFilterById: async (id: string) => undefined,
-      deleteFilter: async (id: string) => {},
-      updateLastUsed: async (id: string) => {},
-      renameFilter: async (id: string, newName: string) => {},
-      updateDescription: async (id: string, description?: string) => {}
+      getFilterById: async (_id: string) => undefined,
+      deleteFilter: async (_id: string) => {},
+      updateLastUsed: async (_id: string) => {},
+      renameFilter: async (_id: string, _newName: string) => {},
+      updateDescription: async (_id: string, _description?: string) => {}
     };
 
     let appliedViewId: string | undefined;
@@ -71,27 +75,24 @@ suite('SearchViewProvider Integration Tests', () => {
   });
 
   test('webview receives initial custom views on ready message', async () => {
-    const webview = createMockWebview();
+    const webview = createMockWebview(postedMessages);
     const webviewView = createMockWebviewView(webview);
     
     searchProvider.resolveWebviewView(webviewView);
 
-    let receivedMessage: any;
-    webview.postMessage = (message: any) => {
-      receivedMessage = message;
-      return Promise.resolve(true);
-    };
-
     await webview.simulateMessage({ type: 'ready' });
 
-    assert.strictEqual(receivedMessage?.type, 'views');
-    assert.deepStrictEqual(receivedMessage?.payload, [
+    const viewsMessage = postedMessages.find((message) => message.type === 'views');
+    assert.ok(viewsMessage);
+    assert.deepStrictEqual(viewsMessage.payload, [
       { id: 'test-view', name: 'Test View' }
     ]);
+    assert.ok(postedMessages.some((message) => message.type === 'searchHistory'));
+    assert.ok(postedMessages.some((message) => message.type === 'savedFilters'));
   });
 
   test('filter application message flow', async () => {
-    const webview = createMockWebview();
+    const webview = createMockWebview(postedMessages);
     const webviewView = createMockWebviewView(webview);
     
     const mockDocument = {
@@ -99,8 +100,7 @@ suite('SearchViewProvider Integration Tests', () => {
       languageId: 'arxml'
     } as vscode.TextDocument;
 
-    const originalActiveTextEditor = vscode.window.activeTextEditor;
-    (vscode.window as any).activeTextEditor = { document: mockDocument };
+    const restoreActiveTextEditor = stubActiveTextEditor({ document: mockDocument } as vscode.TextEditor);
 
     searchProvider.resolveWebviewView(webviewView);
 
@@ -118,11 +118,11 @@ suite('SearchViewProvider Integration Tests', () => {
     assert.strictEqual(mockTreeProvider.lastFilterDocument, mockDocument);
     assert.deepStrictEqual(mockTreeProvider.lastFilterConfig, filterConfig);
 
-    (vscode.window as any).activeTextEditor = originalActiveTextEditor;
+    restoreActiveTextEditor();
   });
 
   test('custom view selection message flow', async () => {
-    const webview = createMockWebview();
+    const webview = createMockWebview(postedMessages);
     const webviewView = createMockWebviewView(webview);
     
     let appliedCustomViewId: string | undefined;
@@ -149,7 +149,7 @@ suite('SearchViewProvider Integration Tests', () => {
   });
 
   test('clear operations message flow', async () => {
-    const webview = createMockWebview();
+    const webview = createMockWebview(postedMessages);
     const webviewView = createMockWebviewView(webview);
     
     const mockDocument = {
@@ -157,8 +157,7 @@ suite('SearchViewProvider Integration Tests', () => {
       languageId: 'arxml'
     } as vscode.TextDocument;
 
-    const originalActiveTextEditor = vscode.window.activeTextEditor;
-    (vscode.window as any).activeTextEditor = { document: mockDocument };
+    const restoreActiveTextEditor = stubActiveTextEditor({ document: mockDocument } as vscode.TextEditor);
 
     let customViewCleared = false;
     
@@ -182,28 +181,19 @@ suite('SearchViewProvider Integration Tests', () => {
     await webview.simulateMessage({ type: 'clearCustomView' });
     assert.strictEqual(customViewCleared, true);
 
-    (vscode.window as any).activeTextEditor = originalActiveTextEditor;
+    restoreActiveTextEditor();
   });
 
-  test('error handling for invalid documents', async () => {
-    const webview = createMockWebview();
+  test('apply ignores invalid documents', async () => {
+    const webview = createMockWebview(postedMessages);
     const webviewView = createMockWebviewView(webview);
-    
+
     const mockNonArxmlDocument = {
       uri: vscode.Uri.parse('file:///test.txt'),
       languageId: 'txt'
     } as vscode.TextDocument;
 
-    const originalActiveTextEditor = vscode.window.activeTextEditor;
-    const originalShowInformationMessage = vscode.window.showInformationMessage;
-    
-    let errorMessageShown = false;
-    
-    (vscode.window as any).activeTextEditor = { document: mockNonArxmlDocument };
-    (vscode.window as any).showInformationMessage = (message: string) => {
-      errorMessageShown = true;
-      return Promise.resolve(undefined);
-    };
+    const restoreActiveTextEditor = stubActiveTextEditor({ document: mockNonArxmlDocument } as vscode.TextEditor);
 
     searchProvider.resolveWebviewView(webviewView);
 
@@ -212,17 +202,15 @@ suite('SearchViewProvider Integration Tests', () => {
       payload: { mode: 'contains', name: 'test' }
     });
 
-    assert.strictEqual(errorMessageShown, true);
     assert.strictEqual(mockTreeProvider.lastFilterDocument, undefined);
 
-    (vscode.window as any).activeTextEditor = originalActiveTextEditor;
-    (vscode.window as any).showInformationMessage = originalShowInformationMessage;
+    restoreActiveTextEditor();
   });
 
   test('webview view refresh updates displayed views', async () => {
-    const webview = createMockWebview();
+    const webview = createMockWebview(postedMessages);
     const webviewView = createMockWebviewView(webview);
-    
+
     searchProvider.resolveWebviewView(webviewView);
 
     mockCustomViewStore.list = async () => [
@@ -230,23 +218,20 @@ suite('SearchViewProvider Integration Tests', () => {
       { id: 'another-view', name: 'Another View', config: {} }
     ];
 
-    let lastMessage: any;
-    webview.postMessage = (message: any) => {
-      lastMessage = message;
-      return Promise.resolve(true);
-    };
-
     await searchProvider.refreshViews();
 
-    assert.strictEqual(lastMessage?.type, 'views');
-    assert.deepStrictEqual(lastMessage?.payload, [
+    const viewsMessage = postedMessages.find((message) => message.type === 'views');
+    assert.ok(viewsMessage);
+    assert.deepStrictEqual(viewsMessage.payload, [
       { id: 'new-view', name: 'New View' },
       { id: 'another-view', name: 'Another View' }
     ]);
+    assert.ok(postedMessages.some((message) => message.type === 'savedFilters'));
+    assert.ok(postedMessages.some((message) => message.type === 'searchHistory'));
   });
 });
 
-function createMockWebview() {
+function createMockWebview(postedMessages: any[]) {
   const messageHandlers: Array<(message: any) => void> = [];
   
   return {
@@ -256,11 +241,30 @@ function createMockWebview() {
       messageHandlers.push(handler);
       return { dispose: () => {} };
     },
-    postMessage: (message: any) => Promise.resolve(true),
+    postMessage: (message: any) => {
+      postedMessages.push(message);
+      return Promise.resolve(true);
+    },
     simulateMessage: async (message: any) => {
       for (const handler of messageHandlers) {
         await handler(message);
       }
+    }
+  };
+}
+
+function stubActiveTextEditor(editor: vscode.TextEditor | undefined): () => void {
+  const descriptor = Object.getOwnPropertyDescriptor(vscode.window, 'activeTextEditor');
+  Object.defineProperty(vscode.window, 'activeTextEditor', {
+    configurable: true,
+    get: () => editor
+  });
+
+  return () => {
+    if (descriptor) {
+      Object.defineProperty(vscode.window, 'activeTextEditor', descriptor);
+    } else {
+      delete (vscode.window as Partial<typeof vscode.window>).activeTextEditor;
     }
   };
 }

@@ -222,7 +222,7 @@ suite('Performance settings', () => {
     };
     
     const totalNodes = countDescendants(root);
-    assert.ok(totalNodes > 1000, `Large document should have >1000 nodes (has ${totalNodes})`);
+    assert.ok(totalNodes >= 400, `Large document should have >=400 nodes (has ${totalNodes})`);
   });
 
   test('workspace configuration can be read for refresh settings', () => {

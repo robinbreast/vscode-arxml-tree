@@ -6,6 +6,13 @@ Repository
 - VS Code extension for ARXML tree navigation.
 - Main code in `src/`, compiled output in `out/`.
 
+Documentation Structure (Single Responsibility)
+- [`README.md`](README.md): user-facing behavior, feature usage, and quick contributor flow.
+- [`AGENTS.md`](AGENTS.md) (this file): engineering conventions and implementation guardrails.
+- [`.claude/skills/arxml-tree-domain/references/custom-views.md`](.claude/skills/arxml-tree-domain/references/custom-views.md): custom-view schema and examples.
+- [`package.json`](package.json): canonical command and setting definitions.
+- [`.claude/skills/*/SKILL.md`](.claude/skills/): task-specific agent workflows.
+
 Quick Start
 - Install deps: `npm install`
 - Build bundle: `npm run esbuild`
@@ -21,9 +28,9 @@ Build, Lint, Test
 - Tests: `npm test`
 
 Run a Single Test
-- Preferred: VS Code Testing view (see `vsc-extension-quickstart.md`).
+- Preferred: VS Code Testing view; tests are discovered from [`src/test/`](src/test/) (`*.test.ts`).
 - CLI (Mocha grep): `npm test -- --grep "<test name substring>"`
-- Single file (Mocha): `npm test -- --grep "<suite name>"` and keep tests in `src/test/extension.test.ts`.
+- Single file (Mocha): `npm test -- --grep "<suite name>"` and keep tests in [`src/test/extension.test.ts`](src/test/extension.test.ts).
 
 Debugging
 - Use VS Code launch config and press `F5`.
@@ -34,11 +41,13 @@ Generated/Build Artifacts
 - `dist/` is ignored by ESLint; treat as generated output.
 
 Code Style (Observed)
-- Language: TypeScript with `strict` enabled (`tsconfig.json`).
+- Language: TypeScript with `strict` enabled ([`tsconfig.json`](tsconfig.json)).
+- Additional checks enabled: `noImplicitReturns`, `noFallthroughCasesInSwitch`, and `noUnusedParameters`.
+- ESLint uses flat config in [`eslint.config.js`](eslint.config.js) (ESLint 9+).
 - Imports: `import * as vscode from 'vscode';` for VS Code API.
 - Relative imports use `./` and `../` (no path aliases).
 - Quotes: single quotes in TS source.
-- Semicolons are used; ESLint enforces `@typescript-eslint/semi` (warn).
+- Semicolons are used; ESLint enforces `semi` (warn).
 - Curly braces required for control flow (`curly: warn`).
 - Prefer `===`/`!==` (`eqeqeq: warn`).
 - Do not `throw` literals; throw `Error` instances (`no-throw-literal: warn`).
@@ -58,6 +67,7 @@ Naming
 - `PascalCase` for classes/interfaces/types.
 - `SCREAMING_SNAKE_CASE` for constants only when truly constant.
 - Import naming: `camelCase` or `PascalCase` (per ESLint naming rule).
+- Prefix intentionally unused parameters with `_` to satisfy `noUnusedParameters`.
 
 Error Handling
 - Surface errors via VS Code UI when user-visible:
@@ -66,9 +76,10 @@ Error Handling
 - Preserve error messages in promise chains (`catch(error => ...)`).
 
 Testing Conventions
-- Test framework: Mocha (see `src/test/extension.test.ts`).
+- Test framework: Mocha (see [`src/test/extension.test.ts`](src/test/extension.test.ts)).
 - Use `suite` and `test` helpers from Mocha.
 - Keep test fixtures inline when small; use helper functions for setup.
+- In test doubles and mocks, prefix unused callback parameters with `_`.
 
 Repo-Specific Patterns
 - Tree data providers implement `vscode.TreeDataProvider<T>` and may be disposable.
@@ -76,11 +87,12 @@ Repo-Specific Patterns
 - Cross-file navigation relies on open documents; keep index updates fast.
 
 Docs to Keep in Sync
-- If you add or change commands/settings, update `README.md`.
-- Extension activation and contributions live in `package.json`.
+- If you add or change commands/settings, update [`README.md`](README.md).
+- Extension activation and contributions live in [`package.json`](package.json).
+- Prefer linking to the canonical source above instead of duplicating long lists in multiple docs.
 
 Cursor/Copilot Rules
-- No `.cursor/rules/`, `.cursorrules`, or `.github/copilot-instructions.md` found.
+- No [`.cursor/rules/`](.cursor/rules/), [`.cursorrules`](.cursorrules), or [`.github/copilot-instructions.md`](.github/copilot-instructions.md) found.
 
 Notes for Agents
 - Read the target file first; follow local style.

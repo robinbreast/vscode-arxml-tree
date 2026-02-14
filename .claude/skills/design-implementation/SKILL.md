@@ -6,8 +6,13 @@ compatibility: Requires access to the repository and its documentation.
 
 Use this skill when shaping solutions that span multiple files or modules.
 
+Shared conventions
+- Follow [`AGENTS.md`](../../../AGENTS.md) for coding style, TypeScript/lint rules, and testing conventions.
+- Keep this skill focused on design and implementation tradeoffs.
+
 Principles
 - Keep SOLID and DRY principles in design, implementation, and documentation.
+- Think and design first before implementation; confirm architecture choices before editing files.
 - Prefer small, focused changes over broad refactors.
 - Align with existing patterns and TypeScript strictness.
 
@@ -24,3 +29,4 @@ Implementation checklist
 3. Handle errors explicitly and surface user-visible errors via VS Code UI.
 4. Add or update tests when behavior changes.
 5. Keep code and docs synchronized.
+6. Avoid unnecessary refactors; prefer minimal changes that solve the requested problem.

@@ -5,7 +5,7 @@ export class ArxmlHoverProvider implements vscode.HoverProvider {
 
     constructor(private treeProvider: ArxmlTreeProvider) { }
 
-    async provideHover(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken): Promise<vscode.Hover | undefined> {
+    async provideHover(document: vscode.TextDocument, position: vscode.Position, _token: vscode.CancellationToken): Promise<vscode.Hover | undefined> {
         const reference = findReferenceAtPosition(document, position);
         if (!reference) {
             return undefined;
