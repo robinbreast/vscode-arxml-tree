@@ -23,7 +23,7 @@
   "homepage": "https://github.com/robinbreast/vscode-arxml-tree/blob/main/README.md",
   "repository": {
     "type": "git",
-    "uri": "https://github.com/robinbreast/vscode-arxml-tree.git"
+    "url": "https://github.com/robinbreast/vscode-arxml-tree.git"
   },
   "bugs": {
     "url": "https://github.com/robinbreast/vscode-arxml-tree/issues",
