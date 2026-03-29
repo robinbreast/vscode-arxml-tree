@@ -9,7 +9,7 @@ Visualize and navigate AUTOSAR ARXML files directly inside VS Code. The extensio
 
 ## Installation
 1. Install the extension from the [VS Code Marketplace](https://marketplace.visualstudio.com/).
-2. Open any `.arxml` or `.cdd` file. The **ARXML Tree View** appears in the Activity Bar the first time the language is detected.
+2. Open any `.arxml` or `.cdd` file to activate the extension. The **ARXML Tree View** is available in the Activity Bar.
 3. Run `npm install` and `npm run esbuild` inside the repository if you are developing the extension locally.
 
 ## Features
@@ -22,7 +22,7 @@ Visualize and navigate AUTOSAR ARXML files directly inside VS Code. The extensio
 
 ## Usage
 ### Tree View
-Use the **ARTree: Refresh** command or the refresh button in the tree view title to rebuild the tree. Double-clicking a node reveals it in the editor, and the `Focus node` command keeps the tree selection in sync with your caret.
+Use the **ARTree: Refresh** command or the refresh button in the tree view title to rebuild the tree. Selecting a node reveals it in the editor, and the `Focus node` command keeps the tree selection in sync with your caret.
 
 ### Filter Controls
 Filtering is integrated directly into the ARXML Explorer view.
@@ -35,21 +35,21 @@ Filtering is integrated directly into the ARXML Explorer view.
 
 **Keyboard Shortcuts:**
 - `Ctrl+Shift+F` (Cmd+Shift+F): Toggle filter controls
-- `Ctrl+F` (Cmd+F): Toggle File Filter
-- `Esc`: Clear active filter
+- `Ctrl+F` (Cmd+F): Toggle File Filter (when ARXML Explorer is focused)
+- `Esc`: Clear active filter (when ARXML Explorer is focused)
 
 ### Custom Views
 Create and manage custom views to reshape the tree structure:
 
 **Managing Views:**
 - Select a view from **View Controls → Custom Views**
-- Edit views via **ARTree: Edit custom views file** (also available from the View Controls menu)
+- Edit views via **Edit Custom Views** (also available from the View Controls menu)
 - Toggle custom views from the View Controls header icon
 
 **Import/Export:**
-- **Export All Views**: Save all custom views to JSON file
-- **Export Selected**: Export specific views to JSON file  
-- **Import Views**: Import views from JSON file with conflict resolution
+- **ARTree: Export all custom views**: Save all custom views to JSON file
+- **ARTree: Export selected custom views**: Export specific views to JSON file  
+- **ARTree: Import custom views**: Import views from JSON file with conflict resolution
 - Exported files include metadata and versioning for compatibility
 
 **Storage Options:**
@@ -82,8 +82,13 @@ Use the Command Palette and search `ARTree:` to discover commands. The canonical
 - `ARTree: Remove bookmark` — delete the selected bookmark
 
 **Custom Views:**
-- `ARTree: Edit custom views file` — open custom views configuration
-- `ARTree: Toggle Custom View` — enable/disable the current custom view
+- `Edit Custom Views` — open custom views configuration
+- `ARTree: Select Custom View` — select a custom view from available definitions
+- `ARTree: Apply Custom View` — apply a selected custom view in the integrated tree
+- `Toggle Custom View` — enable/disable the current custom view
+- `ARTree: Add custom view` — create a new custom view definition
+- `ARTree: Remove custom view` — remove a custom view definition
+- `ARTree: Apply custom view` — alternate tree-view command entry (most users use `ARTree: Apply Custom View`)
 - `ARTree: Export all custom views` — export all views to JSON file
 - `ARTree: Export selected custom views` — export specific views
 - `ARTree: Import custom views` — import views from JSON file

@@ -1,15 +1,15 @@
 # Custom Views Configuration
 
-Custom views are stored in a JSON file and applied per ARXML document. The main Tree view shows all parsed files, with each file using its own selected view (or default).
+Custom views reshape the tree structure and are applied per open ARXML document. The main Tree view shows all parsed files, with each file using its own selected view (or default).
 
 ## File location
 
 The file location depends on `arxmlTree.customViewStorageScope`:
 
-- `workspace` (default): [`.vscode/arxmlTree.customViews.json`](../../../../.vscode/arxmlTree.customViews.json)
+- `workspace` (default): stored in workspace `.vscode/arxmlTree.customViews.json`
 - global: <extension global storage>/customViews.json (extension-managed path)
 
-Use **ARTree: Edit custom views file** to open the correct file.
+Use **Edit Custom Views** to open the correct file.
 
 Changes take effect when the file is saved.
 

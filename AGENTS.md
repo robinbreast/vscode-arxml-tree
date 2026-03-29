@@ -31,6 +31,14 @@ Run a Single Test
 - Preferred: VS Code Testing view; tests are discovered from [`src/test/`](src/test/) (`*.test.ts`).
 - CLI (Mocha grep): `npm test -- --grep "<test name substring>"`
 - Single file (Mocha): `npm test -- --grep "<suite name>"` and keep tests in [`src/test/extension.test.ts`](src/test/extension.test.ts).
+- Other test files include [`src/test/crossFileSearchProvider.test.ts`](src/test/crossFileSearchProvider.test.ts), [`src/test/searchViewProvider.test.ts`](src/test/searchViewProvider.test.ts), and [`src/test/searchViewProvider.integration.test.ts`](src/test/searchViewProvider.integration.test.ts).
+
+Configuration Settings
+- `arxmlTree.customViewStorageScope`: `workspace` (default) or `global` storage for custom views.
+- `arxmlTree.refreshMode`: `onChange` (default), `onSave`, or `manual`.
+- `arxmlTree.debounceDelay`: numeric debounce delay in ms (100–5000, default 200).
+- `arxmlTree.adaptiveDebounce`: `true` (default) to adapt refresh timing for large files.
+- Canonical setting definitions live in [`package.json`](package.json) under `contributes.configuration.properties`.
 
 Debugging
 - Use VS Code launch config and press `F5`.

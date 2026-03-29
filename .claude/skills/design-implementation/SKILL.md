@@ -11,8 +11,8 @@ Shared conventions
 - Keep this skill focused on design and implementation tradeoffs.
 
 Principles
-- Keep SOLID and DRY principles in design, implementation, and documentation.
-- Think and design first before implementation; confirm architecture choices before editing files.
+- Follow [`AGENTS.md`](../../../AGENTS.md) for design-first, SOLID/DRY, and minimal-change guidance.
+- Design before implementation: confirm architecture choices before editing files.
 - Prefer small, focused changes over broad refactors.
 - Align with existing patterns and TypeScript strictness.
 
@@ -29,4 +29,3 @@ Implementation checklist
 3. Handle errors explicitly and surface user-visible errors via VS Code UI.
 4. Add or update tests when behavior changes.
 5. Keep code and docs synchronized.
-6. Avoid unnecessary refactors; prefer minimal changes that solve the requested problem.

@@ -1,7 +1,7 @@
 ---
 name: skill-maintenance
 description: Maintain and evolve local Agent Skills for this repo. Use after implementing features or changing workflows so skills stay current.
-compatibility: Requires access to this repository's [`.claude/skills/`](../) directory.
+compatibility: Requires access to this repository's .claude/skills/ directory.
 ---
 
 Use this skill whenever new features, workflows, or tooling are added.
@@ -11,17 +11,18 @@ Base specification
 - If local guidance and the specification differ, align the skill with the specification unless the repo has an explicit, documented exception.
 
 Maintenance rules
-1. Update the most relevant existing skill when behaviors change.
-2. Add a new skill only if the change introduces a new domain.
+1. Update an existing skill when behaviors or patterns change within that skill's domain.
+2. Add a new skill only if the change introduces a distinct domain not covered by existing skills (for example: a new tool type, file format, or workflow paradigm).
 3. Keep [`SKILL.md`](SKILL.md) frontmatter valid and matching directory name.
 4. Keep skill instructions concise and task-focused.
 5. Avoid duplicating [`AGENTS.md`](../../../AGENTS.md); reference it if needed.
-6. Keep SOLID and DRY principles in design, implementation, and documentation.
+6. Follow [`AGENTS.md`](../../../AGENTS.md) for design-first, SOLID/DRY, and minimal-change guidance.
 7. Prefer single-source references:
    - [`package.json`](../../../package.json) for commands/settings
    - [`AGENTS.md`](../../../AGENTS.md) for shared conventions
    - [`README.md`](../../../README.md) for user-facing behavior
-8. Think and design first before implementation; define structure and ownership before editing skill docs.
+   - Use skill-local `references/` docs for domain-specific schemas and examples (for example, [`custom-views.md`](../arxml-tree-domain/references/custom-views.md)).
+8. Think and design first before editing skill docs: define structure and ownership up front.
 9. All source-file and documentation references in markdown docs/skills must use markdown links.
 10. Keep skill structure and frontmatter compliant with [Agent Skills Specification](https://agentskills.io/specification) (name/description constraints, optional fields, and directory conventions).
 11. Prefer progressive disclosure from the specification: keep [`SKILL.md`](SKILL.md) concise and place detailed material in `references/` when needed.
@@ -31,7 +32,7 @@ Consistency checklist
 - Skill name: lowercase, hyphenated, 1-64 chars.
 - Description: clear when-to-use guidance (1-1024 chars).
 - Compatibility: only if environment constraints matter.
-- Structure: [`.claude/skills/<skill-name>/SKILL.md`](../).
+- Structure: `.claude/skills/<skill-name>/SKILL.md`.
 
 Update triggers
 - New build/test commands.
@@ -43,3 +44,4 @@ Quality gates
 - Instructions align with current codebase conventions.
 - Skills avoid heavy refactors and keep steps minimal.
 - Skills remain compliant with [Agent Skills Specification](https://agentskills.io/specification).
+- Principles are not copy-pasted across multiple skills when they already exist in [`AGENTS.md`](../../../AGENTS.md).

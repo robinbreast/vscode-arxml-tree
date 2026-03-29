@@ -26,10 +26,10 @@ Core files
 - [`src/searchViewProvider.ts`](../../../src/searchViewProvider.ts): webview messaging for filter/search/history/saved filters.
 - [`src/searchHistoryStore.ts`](../../../src/searchHistoryStore.ts): persistent search history.
 - [`src/savedFiltersStore.ts`](../../../src/savedFiltersStore.ts): persistent saved filters.
+- [`.claude/skills/arxml-tree-domain/references/custom-views.md`](./references/custom-views.md): custom view JSON schema and examples.
 
 Guidelines
-- Think and design first before implementation; validate scope and approach, then edit.
-- Always apply SOLID and DRY principles when evolving workspace behavior.
+- Follow [`AGENTS.md`](../../../AGENTS.md) for design-first and minimal-change principles.
 - Keep parsing streaming; avoid full DOM parsing.
 - Preserve cross-file navigation by indexing open documents.
 - Use `ArxmlNode` consistently and keep ranges accurate.
@@ -38,6 +38,10 @@ Guidelines
 - Maintain workspace/global storage scope behavior for custom views and persisted filters.
 - Handle errors with `vscode.window.showErrorMessage(...)`.
 - Avoid refactors when fixing a specific bug.
+
+Custom view schema & examples
+- See [`.claude/skills/arxml-tree-domain/references/custom-views.md`](./references/custom-views.md) for the JSON schema, field reference, and built-in examples.
+- Custom views are stored per-workspace or globally based on `arxmlTree.customViewStorageScope`.
 
 Indexing behavior
 - `ArxmlTreeProvider` rebuilds an ARPATH index for quick lookup.

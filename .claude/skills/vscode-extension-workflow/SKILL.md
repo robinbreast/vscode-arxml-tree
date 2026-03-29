@@ -27,7 +27,7 @@ Commands
 - Tests: `npm test`
 
 Single test
-- Prefer VS Code Testing view; tests live in [`src/test/extension.test.ts`](../../../src/test/extension.test.ts).
+- Prefer VS Code Testing view; tests are discovered in [`src/test/`](../../../src/test/) (`*.test.ts`).
 - CLI: `npm test -- --grep "<test name substring>"`.
 
 Workflow checklist
@@ -37,13 +37,12 @@ Workflow checklist
 4. Match existing TypeScript style and ESLint rules.
 5. Run `npm run compile`, `npm run lint`, and `npm test` after changes when feasible.
 6. Keep docs DRY: reference [`package.json`](../../../package.json) as command/settings source of truth.
-7. Think and design first before implementation; decide workflow impacts before changing scripts/contributions.
-8. Always apply SOLID and DRY principles when changing extension workflow behavior.
-9. Avoid unnecessary refactors of scripts/contributions; keep workflow edits minimal and focused.
+7. Follow [`AGENTS.md`](../../../AGENTS.md) for design-first, SOLID/DRY, and minimal-change guidance when changing scripts/contributions.
+8. Avoid unnecessary refactors of scripts/contributions; keep workflow edits minimal and focused.
 
 Feature/workflow hotspots
 - Filter controls now support per-field modes (Contains/Regex/Glob) and recent-filter operations.
-- Custom view flows include select/apply/toggle/import/export plus workspace/global storage scope.
+- Custom view flows include select/apply/toggle/import/export plus workspace/global storage scope (see [`custom-views.md`](../arxml-tree-domain/references/custom-views.md) for schema and constraints).
 - Performance behavior includes `refreshMode`, `debounceDelay`, and `adaptiveDebounce` settings.
 - Search and saved filters use persistent stores (`SearchHistoryStore`, `SavedFiltersStore`).
 
