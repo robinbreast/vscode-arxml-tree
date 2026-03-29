@@ -21,6 +21,7 @@ interface ParseOptions {
   nameTags?: string[];
   nameTextTags?: string[];
   includeUnnamedContainers?: boolean;
+  abortSignal?: AbortSignal;
 }
 
 export async function parseArxmlDocument(
@@ -142,7 +143,7 @@ export async function parseArxmlDocument(
     parentNode.children.splice(childrenStart, 0, containerNode);
   };
 
-  await streamParse(parser, parseText);
+  await streamParse(parser, parseText, options.abortSignal);
 
   if (parseError) {
     throw parseError;
@@ -187,11 +188,15 @@ function sanitizeXmlText(value: string): string {
   return value.replace(INVALID_XML_CHARS, ' ');
 }
 
-async function streamParse(parser: ReturnType<typeof saxParser>, text: string): Promise<void> {
+async function streamParse(parser: ReturnType<typeof saxParser>, text: string, abortSignal?: AbortSignal): Promise<void> {
   let offset = 0;
   await new Promise<void>((resolve, reject) => {
     const pump = () => {
       try {
+        if (abortSignal?.aborted) {
+          reject(new Error('Parsing cancelled'));
+          return;
+        }
         if (offset < text.length) {
           const chunk = text.slice(offset, offset + CHUNK_SIZE);
           parser.write(chunk);

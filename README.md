@@ -101,6 +101,7 @@ The extension is optimized for large ARXML files:
 - Lazy loading and chunked processing for large trees
 - Intelligent caching with background processing
 - Debounced filter application (200ms default, configurable 100-5000ms) to prevent lag
+- For very large ARXML files, workspace search/indexing can fall back to filesystem reads instead of relying only on VS Code text-document synchronization
 
 **Search Performance:**
 - Real-time result counting for applied filters
@@ -124,8 +125,14 @@ Fine-tune refresh behavior and debouncing to match your workflow:
 - Automatically increases debounce delay for large files to maintain UI responsiveness
 - Disable if you prefer consistent refresh timing regardless of file size
 
+**`arxmlTree.workspaceSearchLargeFileThresholdMB`** (default: 50, range: 10–500)
+- Size threshold used by workspace search to switch to conservative large-file mode
+- Larger/equal files are parsed more conservatively (sequentially) and prefer filesystem fallback
+- Lower this if you want earlier stability protections; raise it if you prefer maximum throughput
+
 ## Limitations & Tips
 - **Cross-File Navigation:** The extension can only navigate to references in currently **open** ARXML files. If a reference shows "Not found in open files", open the target ARXML file containing that definition.
+- **Very Large Files:** VS Code may disable document synchronization for extremely large files. Workspace search uses a filesystem parsing fallback beyond `arxmlTree.workspaceSearchLargeFileThresholdMB` (default 50MB), so you no longer need to split files just for workspace indexing/search.
 - **ECUC Definitions:** Some AUTOSAR ECUC module definitions (like `/MICROSAR/Rte/...`) may be in separate definition files. Open these files for full navigation support.
 - **Error Handling:** The extension provides comprehensive error feedback through notifications. Look for visual indicators and retry options when operations fail.
 - Parsing requires valid XML. If the document contains syntax errors the extension reports them in VS Code's notification area.

@@ -512,6 +512,13 @@
           "type": "boolean",
           "default": true,
           "description": "Enable adaptive debouncing that automatically increases delay for large files to maintain responsiveness."
+        },
+        "arxmlTree.workspaceSearchLargeFileThresholdMB": {
+          "type": "number",
+          "default": 50,
+          "minimum": 10,
+          "maximum": 500,
+          "description": "File size threshold in MB used by workspace search to switch to conservative large-file handling (sequential processing and filesystem parsing fallback). Lower values favor stability; higher values favor throughput."
         }
       }
     }

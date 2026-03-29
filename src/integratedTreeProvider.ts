@@ -529,11 +529,19 @@ export class IntegratedTreeProvider implements vscode.TreeDataProvider<ArxmlNode
     try {
       await this.searchHistoryStore.addSearch(filter);
 
+      let lastProgressUpdate = 0;
+
       this.workspaceResults = await this.crossFileSearchProvider.searchWorkspace(
         filter,
         (progress) => {
-          vscode.window.showInformationMessage(
-            `Filtering: ${progress.files} files processed, ${progress.matches} matches found`
+          const now = Date.now();
+          if (now - lastProgressUpdate < 500) {
+            return;
+          }
+          lastProgressUpdate = now;
+          vscode.window.setStatusBarMessage(
+            `ARXML workspace filtering: ${progress.files} files, ${progress.matches} matches`,
+            1000
           );
         }
       );

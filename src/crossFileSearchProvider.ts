@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { parseArxmlDocument } from './arxmlParser';
 import { ArxmlNode } from './arxmlNode';
+import { createTextPositionResolver } from './textPositionResolver';
 import { TreeFilterConfig, TreeFilterMode } from './treeProvider';
 
 export interface CrossFileSearchResult {
@@ -23,7 +24,22 @@ interface ParsedFileCache {
   lastModified: number;
 }
 
+interface CompiledFilter {
+  nameMatcher?: (value: string) => boolean;
+  arpathMatcher?: (value: string) => boolean;
+  elementMatcher?: (value: string) => boolean;
+}
+
 export class CrossFileSearchProvider implements vscode.Disposable {
+  private static readonly DEFAULT_LARGE_FILE_THRESHOLD_MB = 50;
+  private static readonly MIN_LARGE_FILE_THRESHOLD_MB = 10;
+  private static readonly MAX_LARGE_FILE_THRESHOLD_MB = 500;
+  private static readonly SMALL_FILE_CHUNK_SIZE = 5;
+  private static readonly LARGE_FILE_CHUNK_SIZE = 1;
+  private static readonly MAX_CACHE_ENTRIES = 20;
+  private static readonly STAT_BATCH_SIZE = 32;
+
+
   private readonly disposables: vscode.Disposable[] = [];
   private fileCache: Map<string, ParsedFileCache> = new Map();
   private isSearching: boolean = false;
@@ -87,13 +103,22 @@ export class CrossFileSearchProvider implements vscode.Disposable {
     const combinedAbortController = new AbortController();
     this.lastSearchAbortController = combinedAbortController;
 
+    let externalAbortListener: (() => void) | undefined;
+
     // Combine external abort signal with our internal one
     if (abortSignal) {
-      abortSignal.addEventListener('abort', () => combinedAbortController.abort());
+      externalAbortListener = () => combinedAbortController.abort();
+      abortSignal.addEventListener('abort', externalAbortListener);
+      if (abortSignal.aborted) {
+        combinedAbortController.abort();
+      }
     }
 
     try {
       const arxmlFiles = await this.findArxmlFiles();
+      const fileSizes = await this.getFileSizes(arxmlFiles, combinedAbortController.signal);
+      const largeFileThresholdBytes = this.getLargeFileThresholdBytes();
+      const compiledFilter = this.compileFilter(filter);
       
       if (combinedAbortController.signal.aborted) {
         throw new Error('Search was cancelled');
@@ -103,34 +128,43 @@ export class CrossFileSearchProvider implements vscode.Disposable {
       let totalMatches = 0;
       let processedFiles = 0;
 
-      // Process files in chunks to avoid blocking the UI
-      const chunkSize = 5;
-      for (let i = 0; i < arxmlFiles.length; i += chunkSize) {
-        if (combinedAbortController.signal.aborted) {
-          throw new Error('Search was cancelled');
-        }
+      const smallFiles = arxmlFiles.filter(file => {
+        const size = fileSizes.get(file.toString()) ?? 0;
+        return size < largeFileThresholdBytes;
+      });
+      const largeFiles = arxmlFiles.filter(file => {
+        const size = fileSizes.get(file.toString()) ?? 0;
+        return size >= largeFileThresholdBytes;
+      });
 
-        const chunk = arxmlFiles.slice(i, i + chunkSize);
-        const chunkPromises = chunk.map(file => this.searchFile(file, filter, combinedAbortController.signal));
-        
-        const chunkResults = await Promise.allSettled(chunkPromises);
-        
-        for (const result of chunkResults) {
-          if (result.status === 'fulfilled' && result.value) {
-            results.push(result.value);
-            totalMatches += result.value.totalCount;
+      const processFiles = async (files: vscode.Uri[], chunkSize: number) => {
+        for (let i = 0; i < files.length; i += chunkSize) {
+          if (combinedAbortController.signal.aborted) {
+            throw new Error('Search was cancelled');
           }
-          processedFiles++;
-          
-          // Report progress
-          if (progressCallback) {
-            progressCallback({ files: processedFiles, matches: totalMatches });
-          }
-        }
 
-        // Yield control to prevent blocking the UI
-        await new Promise(resolve => setImmediate(resolve));
-      }
+          const chunk = files.slice(i, i + chunkSize);
+          const chunkPromises = chunk.map(file => this.searchFile(file, compiledFilter, combinedAbortController.signal, largeFileThresholdBytes));
+          const chunkResults = await Promise.allSettled(chunkPromises);
+
+          for (const result of chunkResults) {
+            if (result.status === 'fulfilled' && result.value) {
+              results.push(result.value);
+              totalMatches += result.value.totalCount;
+            }
+            processedFiles++;
+
+            if (progressCallback) {
+              progressCallback({ files: processedFiles, matches: totalMatches });
+            }
+          }
+
+          await new Promise(resolve => setImmediate(resolve));
+        }
+      };
+
+      await processFiles(smallFiles, CrossFileSearchProvider.SMALL_FILE_CHUNK_SIZE);
+      await processFiles(largeFiles, CrossFileSearchProvider.LARGE_FILE_CHUNK_SIZE);
 
       const searchTime = Date.now() - startTime;
       
@@ -141,6 +175,9 @@ export class CrossFileSearchProvider implements vscode.Disposable {
         searchTime
       };
     } finally {
+      if (abortSignal && externalAbortListener) {
+        abortSignal.removeEventListener('abort', externalAbortListener);
+      }
       this.isSearching = false;
     }
   }
@@ -150,15 +187,16 @@ export class CrossFileSearchProvider implements vscode.Disposable {
    */
   private async searchFile(
     file: vscode.Uri,
-    filter: TreeFilterConfig,
-    abortSignal?: AbortSignal
+    compiledFilter: CompiledFilter,
+    abortSignal?: AbortSignal,
+    largeFileThresholdBytes?: number
   ): Promise<CrossFileSearchResult | null> {
     try {
       if (abortSignal?.aborted) {
         return null;
       }
 
-      const rootNode = await this.getCachedOrParsedFile(file);
+      const rootNode = await this.getCachedOrParsedFile(file, largeFileThresholdBytes ?? this.getLargeFileThresholdBytes(), abortSignal);
       if (!rootNode) {
         return null;
       }
@@ -167,7 +205,7 @@ export class CrossFileSearchProvider implements vscode.Disposable {
         return null;
       }
 
-      const matches = this.filterNodes(rootNode, filter);
+      const matches = this.filterNodes(rootNode, compiledFilter);
       
       return {
         file,
@@ -175,6 +213,9 @@ export class CrossFileSearchProvider implements vscode.Disposable {
         totalCount: matches.length
       };
     } catch (error) {
+      if (error instanceof Error && error.message === 'Parsing cancelled') {
+        return null;
+      }
       console.warn(`Failed to search file ${file.fsPath}:`, error);
       return null;
     }
@@ -183,7 +224,7 @@ export class CrossFileSearchProvider implements vscode.Disposable {
   /**
    * Get parsed file from cache or parse it fresh
    */
-  private async getCachedOrParsedFile(file: vscode.Uri): Promise<ArxmlNode | null> {
+  private async getCachedOrParsedFile(file: vscode.Uri, largeFileThresholdBytes: number, abortSignal?: AbortSignal): Promise<ArxmlNode | null> {
     const fileKey = file.toString();
     
     try {
@@ -192,29 +233,47 @@ export class CrossFileSearchProvider implements vscode.Disposable {
 
       // Check if cache is valid
       if (cached && cached.lastModified >= fileStat.mtime) {
+        this.touchCacheEntry(fileKey, cached);
         return cached.rootNode;
       }
 
-      // Parse file fresh
-      const content = await vscode.workspace.fs.readFile(file);
-      const text = new TextDecoder().decode(content);
-      
-      if (!text.trim()) {
-        return null;
+      const openDocument = vscode.workspace.textDocuments.find(doc => doc.uri.toString() === fileKey);
+
+      let text: string;
+      let positionAt: (offset: number) => vscode.Position;
+      let version = -1;
+
+      const shouldUseOpenDocument = Boolean(openDocument && fileStat.size < largeFileThresholdBytes);
+
+      if (shouldUseOpenDocument && openDocument) {
+        text = openDocument.getText();
+        if (!text && fileStat.size > 0) {
+          const content = await vscode.workspace.fs.readFile(file);
+          text = new TextDecoder().decode(content);
+          positionAt = createTextPositionResolver(text);
+        } else {
+          positionAt = offset => openDocument.positionAt(offset);
+          version = openDocument.version;
+        }
+      } else {
+        const content = await vscode.workspace.fs.readFile(file);
+        text = new TextDecoder().decode(content);
+        positionAt = createTextPositionResolver(text);
       }
 
-      const document = await vscode.workspace.openTextDocument(file);
       const rootNode = await parseArxmlDocument(
         text,
         file,
-        offset => document.positionAt(offset),
-        { strict: false }
+        positionAt,
+        {
+          strict: false,
+          abortSignal
+        }
       );
 
       if (rootNode) {
-        // Cache the parsed result
-        this.fileCache.set(fileKey, {
-          version: document.version,
+        this.setCacheEntry(fileKey, {
+          version,
           rootNode,
           lastModified: fileStat.mtime
         });
@@ -230,19 +289,21 @@ export class CrossFileSearchProvider implements vscode.Disposable {
   /**
    * Filter nodes based on search criteria
    */
-  private filterNodes(rootNode: ArxmlNode, filter: TreeFilterConfig): ArxmlNode[] {
+  private filterNodes(rootNode: ArxmlNode, compiledFilter: CompiledFilter): ArxmlNode[] {
     const matches: ArxmlNode[] = [];
     const stack: ArxmlNode[] = [rootNode];
 
     while (stack.length > 0) {
       const node = stack.pop()!;
       
-      if (this.nodeMatchesFilter(node, filter)) {
+      if (this.nodeMatchesFilter(node, compiledFilter)) {
         matches.push(node);
       }
 
       // Continue searching children
-      stack.push(...node.children);
+      for (const child of node.children) {
+        stack.push(child);
+      }
     }
 
     return matches;
@@ -251,26 +312,20 @@ export class CrossFileSearchProvider implements vscode.Disposable {
   /**
    * Check if a node matches the filter criteria
    */
-  private nodeMatchesFilter(node: ArxmlNode, filter: TreeFilterConfig): boolean {
+  private nodeMatchesFilter(node: ArxmlNode, compiledFilter: CompiledFilter): boolean {
     // Check name filter
-    if (filter.name) {
-      if (!this.matchesPattern(node.name, filter.name, this.resolveFilterMode(filter, 'name'))) {
-        return false;
-      }
+    if (compiledFilter.nameMatcher && !compiledFilter.nameMatcher(node.name)) {
+      return false;
     }
 
     // Check ARPATH filter
-    if (filter.arpath) {
-      if (!this.matchesPattern(node.arpath, filter.arpath, this.resolveFilterMode(filter, 'arpath'))) {
-        return false;
-      }
+    if (compiledFilter.arpathMatcher && !compiledFilter.arpathMatcher(node.arpath)) {
+      return false;
     }
 
     // Check element filter
-    if (filter.element) {
-      if (!this.matchesPattern(node.element, filter.element, this.resolveFilterMode(filter, 'element'))) {
-        return false;
-      }
+    if (compiledFilter.elementMatcher && !compiledFilter.elementMatcher(node.element)) {
+      return false;
     }
 
     return true;
@@ -310,6 +365,51 @@ export class CrossFileSearchProvider implements vscode.Disposable {
     }
   }
 
+  private compileFilter(filter: TreeFilterConfig): CompiledFilter {
+    return {
+      nameMatcher: this.compileFieldMatcher(filter, 'name'),
+      arpathMatcher: this.compileFieldMatcher(filter, 'arpath'),
+      elementMatcher: this.compileFieldMatcher(filter, 'element')
+    };
+  }
+
+  private compileFieldMatcher(filter: TreeFilterConfig, field: 'name' | 'arpath' | 'element'): ((value: string) => boolean) | undefined {
+    const pattern = filter[field];
+    if (!pattern) {
+      return undefined;
+    }
+
+    const mode = this.resolveFilterMode(filter, field);
+    if (mode === 'contains') {
+      const lowerPattern = pattern.toLowerCase();
+      return value => value.toLowerCase().includes(lowerPattern);
+    }
+
+    if (mode === 'regex') {
+      try {
+        const regex = new RegExp(pattern, 'i');
+        return value => regex.test(value);
+      } catch {
+        return () => false;
+      }
+    }
+
+    if (mode === 'glob') {
+      try {
+        const regexPattern = pattern
+          .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+          .replace(/\*/g, '.*')
+          .replace(/\?/g, '.');
+        const regex = new RegExp(`^${regexPattern}$`, 'i');
+        return value => regex.test(value);
+      } catch {
+        return () => false;
+      }
+    }
+
+    return () => false;
+  }
+
   /**
    * Simple glob pattern matching
    */
@@ -325,6 +425,56 @@ export class CrossFileSearchProvider implements vscode.Disposable {
       return regex.test(text);
     } catch {
       return false;
+    }
+  }
+
+  private async getFileSizes(files: vscode.Uri[], abortSignal?: AbortSignal): Promise<Map<string, number>> {
+    const sizes = new Map<string, number>();
+    for (let i = 0; i < files.length; i += CrossFileSearchProvider.STAT_BATCH_SIZE) {
+      if (abortSignal?.aborted) {
+        break;
+      }
+      const batch = files.slice(i, i + CrossFileSearchProvider.STAT_BATCH_SIZE);
+      const results = await Promise.allSettled(batch.map(file => vscode.workspace.fs.stat(file)));
+      for (let j = 0; j < batch.length; j++) {
+        const file = batch[j];
+        const result = results[j];
+        if (result.status === 'fulfilled') {
+          sizes.set(file.toString(), result.value.size);
+        }
+      }
+
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    return sizes;
+  }
+
+  private getLargeFileThresholdBytes(): number {
+    const config = vscode.workspace.getConfiguration('arxmlTree');
+    const thresholdMb = config.get<number>('workspaceSearchLargeFileThresholdMB', CrossFileSearchProvider.DEFAULT_LARGE_FILE_THRESHOLD_MB);
+    const clampedMb = Math.max(
+      CrossFileSearchProvider.MIN_LARGE_FILE_THRESHOLD_MB,
+      Math.min(CrossFileSearchProvider.MAX_LARGE_FILE_THRESHOLD_MB, thresholdMb)
+    );
+    return clampedMb * 1024 * 1024;
+  }
+
+  private touchCacheEntry(fileKey: string, cached: ParsedFileCache): void {
+    this.fileCache.delete(fileKey);
+    this.fileCache.set(fileKey, cached);
+  }
+
+  private setCacheEntry(fileKey: string, entry: ParsedFileCache): void {
+    if (this.fileCache.has(fileKey)) {
+      this.fileCache.delete(fileKey);
+    }
+    this.fileCache.set(fileKey, entry);
+    while (this.fileCache.size > CrossFileSearchProvider.MAX_CACHE_ENTRIES) {
+      const oldest = this.fileCache.keys().next().value as string | undefined;
+      if (!oldest) {
+        break;
+      }
+      this.fileCache.delete(oldest);
     }
   }
 

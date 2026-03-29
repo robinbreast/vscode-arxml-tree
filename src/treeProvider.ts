@@ -577,8 +577,9 @@ export class ArxmlTreeProvider implements vscode.TreeDataProvider<ArxmlNode>, vs
         continue;
       }
       try {
+        const text = document.getText();
         const root = await parseArxmlDocument(
-          document.getText(),
+          text,
           document.uri,
           (offset) => document.positionAt(offset),
           {

@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { parseArxmlDocument } from '../arxmlParser';
 import { BookmarkTreeProvider } from '../treeProvider';
 import { ArxmlNode } from '../arxmlNode';
+import { createTextPositionResolver } from '../textPositionResolver';
 
 suite('ARXML Parser', () => {
   test('builds tree for nested elements with UUIDs', async () => {
@@ -21,7 +22,7 @@ suite('ARXML Parser', () => {
 </AUTOSAR>`;
 
     const uri = vscode.Uri.parse('file:///sample.arxml');
-    const root = await parseArxmlDocument(sample, uri, createPositionResolver(sample));
+    const root = await parseArxmlDocument(sample, uri, createTextPositionResolver(sample));
     assert.ok(root, 'root node should be defined');
     assert.strictEqual(root?.children.length, 1);
 
@@ -68,35 +69,6 @@ function createNode(name: string, arpath: string): ArxmlNode {
   };
 }
 
-function createPositionResolver(text: string): (offset: number) => vscode.Position {
-  const lineOffsets: number[] = [0];
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === '\n') {
-      lineOffsets.push(i + 1);
-    }
-  }
-
-  return (offset: number) => {
-    const clamped = Math.max(0, Math.min(text.length, offset));
-    let low = 0;
-    let high = lineOffsets.length - 1;
-    while (low <= high) {
-      const mid = Math.floor((low + high) / 2);
-      const lineStart = lineOffsets[mid];
-      const nextLineStart = mid + 1 < lineOffsets.length ? lineOffsets[mid + 1] : text.length + 1;
-      if (clamped >= lineStart && clamped < nextLineStart) {
-        return new vscode.Position(mid, clamped - lineStart);
-      } else if (clamped < lineStart) {
-        high = mid - 1;
-      } else {
-        low = mid + 1;
-      }
-    }
-
-    return new vscode.Position(0, clamped);
-  };
-}
-
 class TestMemento implements vscode.Memento {
   private data = new Map<string, unknown>();
 
@@ -135,7 +107,7 @@ suite('Performance settings', () => {
 </AUTOSAR>`;
 
     const uri = vscode.Uri.parse('file:///test.arxml');
-    const root = await parseArxmlDocument(sample, uri, createPositionResolver(sample));
+    const root = await parseArxmlDocument(sample, uri, createTextPositionResolver(sample));
     
     assert.ok(root, 'Parser should return a root node for valid ARXML');
     assert.strictEqual(root?.children.length, 1, 'Root should have one child');
@@ -166,8 +138,8 @@ suite('Performance settings', () => {
     const uri1 = vscode.Uri.parse('file:///test1.arxml');
     const uri2 = vscode.Uri.parse('file:///test2.arxml');
     
-    const root1 = await parseArxmlDocument(sample1, uri1, createPositionResolver(sample1));
-    const root2 = await parseArxmlDocument(sample2, uri2, createPositionResolver(sample2));
+    const root1 = await parseArxmlDocument(sample1, uri1, createTextPositionResolver(sample1));
+    const root2 = await parseArxmlDocument(sample2, uri2, createTextPositionResolver(sample2));
     
     assert.ok(root1, 'First document should parse');
     assert.ok(root2, 'Second document should parse');
@@ -207,7 +179,7 @@ suite('Performance settings', () => {
 </AUTOSAR>`;
 
     const uri = vscode.Uri.parse('file:///large.arxml');
-    const root = await parseArxmlDocument(largeSample, uri, createPositionResolver(largeSample));
+    const root = await parseArxmlDocument(largeSample, uri, createTextPositionResolver(largeSample));
     
     assert.ok(root, 'Large document should parse successfully');
     const pkg = root?.children[0];
@@ -231,9 +203,11 @@ suite('Performance settings', () => {
     const refreshMode = config.get('refreshMode');
     const debounceDelay = config.get('debounceDelay');
     const adaptiveDebounce = config.get('adaptiveDebounce');
+    const workspaceSearchLargeFileThresholdMB = config.get('workspaceSearchLargeFileThresholdMB');
     
     assert.ok(typeof refreshMode === 'string' || refreshMode === undefined, 'refreshMode should be string or undefined');
     assert.ok(typeof debounceDelay === 'number' || debounceDelay === undefined, 'debounceDelay should be number or undefined');
     assert.ok(typeof adaptiveDebounce === 'boolean' || adaptiveDebounce === undefined, 'adaptiveDebounce should be boolean or undefined');
+    assert.ok(typeof workspaceSearchLargeFileThresholdMB === 'number' || workspaceSearchLargeFileThresholdMB === undefined, 'workspaceSearchLargeFileThresholdMB should be number or undefined');
   });
 });
