@@ -1,8 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { parseArxmlDocument } from './arxmlParser';
+import { parseArxmlDocument, parseArxmlDocumentFromFile } from './arxmlParser';
 import { ArxmlNode } from './arxmlNode';
-import { createTextPositionResolver } from './textPositionResolver';
 import { TreeFilterConfig, TreeFilterMode } from './treeProvider';
 
 export interface CrossFileSearchResult {
@@ -166,6 +165,10 @@ export class CrossFileSearchProvider implements vscode.Disposable {
       await processFiles(smallFiles, CrossFileSearchProvider.SMALL_FILE_CHUNK_SIZE);
       await processFiles(largeFiles, CrossFileSearchProvider.LARGE_FILE_CHUNK_SIZE);
 
+      if (combinedAbortController.signal.aborted) {
+        throw new Error('Search was cancelled');
+      }
+
       const searchTime = Date.now() - startTime;
       
       return {
@@ -239,37 +242,36 @@ export class CrossFileSearchProvider implements vscode.Disposable {
 
       const openDocument = vscode.workspace.textDocuments.find(doc => doc.uri.toString() === fileKey);
 
-      let text: string;
-      let positionAt: (offset: number) => vscode.Position;
       let version = -1;
+      let rootNode: ArxmlNode | undefined;
 
       const shouldUseOpenDocument = Boolean(openDocument && fileStat.size < largeFileThresholdBytes);
 
       if (shouldUseOpenDocument && openDocument) {
-        text = openDocument.getText();
+        const text = openDocument.getText();
         if (!text && fileStat.size > 0) {
-          const content = await vscode.workspace.fs.readFile(file);
-          text = new TextDecoder().decode(content);
-          positionAt = createTextPositionResolver(text);
+          rootNode = await parseArxmlDocumentFromFile(file, {
+            strict: false,
+            abortSignal
+          });
         } else {
-          positionAt = offset => openDocument.positionAt(offset);
           version = openDocument.version;
+          rootNode = await parseArxmlDocument(
+            text,
+            file,
+            offset => openDocument.positionAt(offset),
+            {
+              strict: false,
+              abortSignal
+            }
+          );
         }
       } else {
-        const content = await vscode.workspace.fs.readFile(file);
-        text = new TextDecoder().decode(content);
-        positionAt = createTextPositionResolver(text);
-      }
-
-      const rootNode = await parseArxmlDocument(
-        text,
-        file,
-        positionAt,
-        {
+        rootNode = await parseArxmlDocumentFromFile(file, {
           strict: false,
           abortSignal
-        }
-      );
+        });
+      }
 
       if (rootNode) {
         this.setCacheEntry(fileKey, {
@@ -281,6 +283,9 @@ export class CrossFileSearchProvider implements vscode.Disposable {
 
       return rootNode || null;
     } catch (error) {
+      if (error instanceof Error && error.message === 'Parsing cancelled') {
+        return null;
+      }
       console.warn(`Failed to parse file ${file.fsPath}:`, error);
       return null;
     }
@@ -347,24 +352,6 @@ export class CrossFileSearchProvider implements vscode.Disposable {
     return filter.mode;
   }
 
-  private matchesPattern(value: string, pattern: string, mode: TreeFilterMode): boolean {
-    switch (mode) {
-      case 'contains':
-        return value.toLowerCase().includes(pattern.toLowerCase());
-      case 'regex':
-        try {
-          const regex = new RegExp(pattern, 'i');
-          return regex.test(value);
-        } catch {
-          return false;
-        }
-      case 'glob':
-        return this.globMatch(value, pattern);
-      default:
-        return false;
-    }
-  }
-
   private compileFilter(filter: TreeFilterConfig): CompiledFilter {
     return {
       nameMatcher: this.compileFieldMatcher(filter, 'name'),
@@ -408,24 +395,6 @@ export class CrossFileSearchProvider implements vscode.Disposable {
     }
 
     return () => false;
-  }
-
-  /**
-   * Simple glob pattern matching
-   */
-  private globMatch(text: string, pattern: string): boolean {
-    // Convert glob pattern to regex
-    const regexPattern = pattern
-      .replace(/[.+^${}()|[\]\\]/g, '\\$&') // Escape regex special chars except * and ?
-      .replace(/\*/g, '.*') // * matches any characters
-      .replace(/\?/g, '.'); // ? matches single character
-
-    try {
-      const regex = new RegExp(`^${regexPattern}$`, 'i');
-      return regex.test(text);
-    } catch {
-      return false;
-    }
   }
 
   private async getFileSizes(files: vscode.Uri[], abortSignal?: AbortSignal): Promise<Map<string, number>> {
@@ -527,11 +496,8 @@ export class CrossFileSearchProvider implements vscode.Disposable {
 
   private onDidRenameFiles(event: vscode.FileRenameEvent): void {
     for (const { oldUri, newUri } of event.files) {
-      const cached = this.fileCache.get(oldUri.toString());
-      if (cached) {
-        this.fileCache.delete(oldUri.toString());
-        this.fileCache.set(newUri.toString(), cached);
-      }
+      this.fileCache.delete(oldUri.toString());
+      this.fileCache.delete(newUri.toString());
     }
   }
 }

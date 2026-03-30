@@ -1,9 +1,10 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
-import { parseArxmlDocument } from '../arxmlParser';
-import { BookmarkTreeProvider } from '../treeProvider';
+import { parseArxmlDocument, parseArxmlDocumentFromFile } from '../arxmlParser';
+import { ArxmlTreeProvider, BookmarkTreeProvider } from '../treeProvider';
 import { ArxmlNode } from '../arxmlNode';
 import { createTextPositionResolver } from '../textPositionResolver';
+import { ArxmlHoverProvider } from '../hoverProvider';
 
 suite('ARXML Parser', () => {
   test('builds tree for nested elements with UUIDs', async () => {
@@ -35,6 +36,153 @@ suite('ARXML Parser', () => {
     assert.strictEqual(comp?.name, 'ExampleComponent');
     assert.strictEqual(comp?.arpath, '/Pkg/ExampleComponent');
     assert.strictEqual(comp?.uuid, '1234');
+  });
+
+  test('parses ARXML from filesystem stream path', async function () {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (!workspaceRoot) {
+      this.skip();
+      return;
+    }
+
+    const file = vscode.Uri.file(`${workspaceRoot.fsPath}/stream-parse-${Date.now()}.arxml`);
+    const sample = `<?xml version="1.0" encoding="UTF-8"?>\n<AUTOSAR><ECUC><SHORT-NAME>StreamAlpha</SHORT-NAME></ECUC></AUTOSAR>`;
+
+    await vscode.workspace.fs.writeFile(file, Buffer.from(sample, 'utf8'));
+    try {
+      const root = await parseArxmlDocumentFromFile(file, { strict: false });
+      assert.ok(root, 'root node should be defined for streamed parse');
+      assert.strictEqual(root?.children[0]?.name, 'StreamAlpha');
+    } finally {
+      await vscode.workspace.fs.delete(file, { useTrash: false });
+    }
+  });
+});
+
+suite('REF hover navigation', () => {
+  test('creates command hyperlink for resolvable REF target', async function () {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (!workspaceRoot) {
+      this.skip();
+      return;
+    }
+
+    const targetFile = vscode.Uri.file(`${workspaceRoot.fsPath}/hover-target-${Date.now()}.arxml`);
+    const sourceFile = vscode.Uri.file(`${workspaceRoot.fsPath}/hover-source-${Date.now()}.arxml`);
+    const files = [targetFile, sourceFile];
+
+    const targetText = `<?xml version="1.0" encoding="UTF-8"?>\n<AUTOSAR><ECUC><SHORT-NAME>TargetNode</SHORT-NAME></ECUC></AUTOSAR>`;
+    const sourceText = `<?xml version="1.0" encoding="UTF-8"?>\n<AUTOSAR><I-SIGNAL-IREF DEST="ECUC">/TargetNode</I-SIGNAL-IREF></AUTOSAR>`;
+
+    await vscode.workspace.fs.writeFile(targetFile, Buffer.from(targetText, 'utf8'));
+    await vscode.workspace.fs.writeFile(sourceFile, Buffer.from(sourceText, 'utf8'));
+
+    try {
+      const targetDoc = await vscode.workspace.openTextDocument(targetFile);
+      const sourceDoc = await vscode.workspace.openTextDocument(sourceFile);
+
+      const provider = new ArxmlTreeProvider();
+      const hoverProvider = new ArxmlHoverProvider(provider);
+      const refOffset = sourceText.indexOf('/TargetNode') + 2;
+      const position = sourceDoc.positionAt(refOffset);
+
+      const hover = await hoverProvider.provideHover(sourceDoc, position, new vscode.CancellationTokenSource().token);
+      assert.ok(hover, 'hover should be produced for resolvable REF');
+
+      const content = hover?.contents[0];
+      assert.ok(isMarkdownString(content), 'hover should render markdown hyperlink');
+      const markdown = content.value;
+      assert.ok(markdown.includes('command:arxml-tree-view.gotoNode?'), 'hover should include goto command URI');
+      assert.ok(markdown.includes('[ECUC: /TargetNode]('), 'hover should include target label');
+      assert.ok(markdown.includes('📄'), 'cross-file hover should include target filename badge');
+
+      provider.dispose();
+      void targetDoc;
+    } finally {
+      await deleteFiles(files);
+    }
+  });
+
+  test('shows not-found guidance for unresolved REF target', async function () {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (!workspaceRoot) {
+      this.skip();
+      return;
+    }
+
+    const sourceFile = vscode.Uri.file(`${workspaceRoot.fsPath}/hover-miss-${Date.now()}.arxml`);
+    const files = [sourceFile];
+    const sourceText = `<?xml version="1.0" encoding="UTF-8"?>\n<AUTOSAR><I-SIGNAL-IREF DEST="ECUC">/MissingNode</I-SIGNAL-IREF></AUTOSAR>`;
+    await vscode.workspace.fs.writeFile(sourceFile, Buffer.from(sourceText, 'utf8'));
+
+    try {
+      const sourceDoc = await vscode.workspace.openTextDocument(sourceFile);
+      const provider = new ArxmlTreeProvider();
+      const hoverProvider = new ArxmlHoverProvider(provider);
+      const refOffset = sourceText.indexOf('/MissingNode') + 2;
+      const position = sourceDoc.positionAt(refOffset);
+
+      const hover = await hoverProvider.provideHover(sourceDoc, position, new vscode.CancellationTokenSource().token);
+      assert.ok(hover, 'hover should be produced for unresolved REF');
+
+      const content = hover?.contents[0];
+      assert.ok(isMarkdownString(content), 'hover should render markdown content');
+      const markdown = content.value;
+      assert.ok(markdown.includes('Not found in open files'), 'hover should explain unresolved target state');
+      assert.ok(markdown.includes('/MissingNode'), 'hover should contain unresolved arpath');
+
+      provider.dispose();
+    } finally {
+      await deleteFiles(files);
+    }
+  });
+
+  test('goto command opens target file at expected range', async function () {
+    this.timeout(10000);
+
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (!workspaceRoot) {
+      this.skip();
+      return;
+    }
+
+    const targetFile = vscode.Uri.file(`${workspaceRoot.fsPath}/goto-target-${Date.now()}.arxml`);
+    const sourceFile = vscode.Uri.file(`${workspaceRoot.fsPath}/goto-source-${Date.now()}.arxml`);
+    const files = [targetFile, sourceFile];
+
+    const uniqueName = `TargetNodeGoto${Date.now()}`;
+    const uniqueArpath = `/${uniqueName}`;
+    const targetText = `<?xml version="1.0" encoding="UTF-8"?>\n<AUTOSAR>\n  <ECUC>\n    <SHORT-NAME>${uniqueName}</SHORT-NAME>\n  </ECUC>\n</AUTOSAR>`;
+    const sourceText = `<?xml version="1.0" encoding="UTF-8"?>\n<AUTOSAR><I-SIGNAL-IREF DEST="ECUC">${uniqueArpath}</I-SIGNAL-IREF></AUTOSAR>`;
+
+    await vscode.workspace.fs.writeFile(targetFile, Buffer.from(targetText, 'utf8'));
+    await vscode.workspace.fs.writeFile(sourceFile, Buffer.from(sourceText, 'utf8'));
+
+    try {
+      const targetDoc = await vscode.workspace.openTextDocument(targetFile);
+      const sourceDoc = await vscode.workspace.openTextDocument(sourceFile);
+      await vscode.window.showTextDocument(targetDoc, { preview: true, preserveFocus: false });
+      await vscode.window.showTextDocument(sourceDoc);
+
+      await vscode.commands.executeCommand('arxml-tree-view.gotoNode', {
+        arpath: uniqueArpath,
+        preferredUri: sourceDoc.uri.toString(),
+        destType: 'ECUC'
+      });
+
+      const activeEditor = vscode.window.activeTextEditor;
+      assert.ok(activeEditor, 'goto command should open an editor');
+      assert.strictEqual(activeEditor?.document.uri.toString(), targetFile.toString(), 'goto should open target file');
+
+      const expectedPosition = activeEditor!.document.positionAt(targetText.indexOf(uniqueName));
+      const selected = activeEditor!.selection;
+      const inRange = selected.contains(expectedPosition)
+        || selected.start.isEqual(expectedPosition)
+        || selected.end.isEqual(expectedPosition);
+      assert.ok(inRange, 'selection should contain the expected target location');
+    } finally {
+      await deleteFiles(files);
+    }
   });
 });
 
@@ -92,6 +240,16 @@ class TestMemento implements vscode.Memento {
       this.data.set(key, value);
     }
     return Promise.resolve();
+  }
+}
+
+function isMarkdownString(value: vscode.MarkdownString | vscode.MarkedString): value is vscode.MarkdownString {
+  return value instanceof vscode.MarkdownString;
+}
+
+async function deleteFiles(files: vscode.Uri[]): Promise<void> {
+  for (const file of files) {
+    await vscode.workspace.fs.delete(file, { useTrash: false });
   }
 }
 

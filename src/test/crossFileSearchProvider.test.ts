@@ -286,6 +286,99 @@ suite('CrossFileSearchProvider', () => {
     assert.ok(warm.searchTime >= 0, 'warm searchTime should be non-negative');
     provider.dispose();
   });
+
+  test('stress: searchWorkspace handles a single >100MB file', async function () {
+    if (!process.env.ARXML_STRESS_TESTS) {
+      this.skip();
+      return;
+    }
+
+    this.timeout(600000);
+    const workspaceRoot = getWorkspaceRootUri();
+    if (!workspaceRoot) {
+      this.skip();
+      return;
+    }
+
+    const file = vscode.Uri.file(path.join(workspaceRoot.fsPath, `cross-search-stress-100mb-${Date.now()}.arxml`));
+    await writeSizedArxmlFile(file.fsPath, 110 * 1024 * 1024, 'Huge100Alpha');
+    filesToCleanup.push(file);
+
+    const provider = new CrossFileSearchProvider();
+    const cold = await provider.searchWorkspace({ mode: 'contains', name: 'Huge100Alpha' });
+    const warm = await provider.searchWorkspace({ mode: 'contains', name: 'Huge100Alpha' });
+
+    console.log(`CrossFileSearchProvider stress-100MB single: cold=${cold.searchTime}ms warm=${warm.searchTime}ms`);
+    assert.ok(cold.totalMatches >= 1, 'expected matches in >100MB single-file test');
+    assert.ok(warm.searchTime <= cold.searchTime + 5000, `expected warm not to regress heavily: cold=${cold.searchTime} warm=${warm.searchTime}`);
+    provider.dispose();
+  });
+
+  test('stress: searchWorkspace handles multiple >100MB files', async function () {
+    if (!process.env.ARXML_STRESS_TESTS) {
+      this.skip();
+      return;
+    }
+
+    this.timeout(900000);
+    const workspaceRoot = getWorkspaceRootUri();
+    if (!workspaceRoot) {
+      this.skip();
+      return;
+    }
+
+    const provider = new CrossFileSearchProvider();
+    const fileCount = 2;
+    const createdFiles: vscode.Uri[] = [];
+
+    for (let i = 0; i < fileCount; i++) {
+      const file = vscode.Uri.file(path.join(workspaceRoot.fsPath, `cross-search-stress-multi-100mb-${Date.now()}-${i}.arxml`));
+      await writeSizedArxmlFile(file.fsPath, 110 * 1024 * 1024, `Huge100Multi${i}`);
+      filesToCleanup.push(file);
+      createdFiles.push(file);
+    }
+
+    const cold = await provider.searchWorkspace({ mode: 'contains', name: 'Huge100Multi' });
+    const warm = await provider.searchWorkspace({ mode: 'contains', name: 'Huge100Multi' });
+    const matchedFiles = cold.files.filter(entry => createdFiles.some(file => file.fsPath === entry.file.fsPath));
+
+    console.log(`CrossFileSearchProvider stress-100MB multi: files=${fileCount} cold=${cold.searchTime}ms warm=${warm.searchTime}ms matches=${matchedFiles.length}`);
+
+    assert.ok(matchedFiles.length >= fileCount, `expected ${fileCount} >100MB files to match, got ${matchedFiles.length}`);
+    assert.ok(warm.searchTime <= cold.searchTime + 8000, `expected warm not to regress heavily: cold=${cold.searchTime} warm=${warm.searchTime}`);
+    provider.dispose();
+  });
+
+  test('stress: in-flight abort cancels heavy parse promptly', async function () {
+    if (!process.env.ARXML_STRESS_TESTS) {
+      this.skip();
+      return;
+    }
+
+    this.timeout(300000);
+    const workspaceRoot = getWorkspaceRootUri();
+    if (!workspaceRoot) {
+      this.skip();
+      return;
+    }
+
+    const file = vscode.Uri.file(path.join(workspaceRoot.fsPath, `cross-search-stress-abort-${Date.now()}.arxml`));
+    await writeSizedArxmlFile(file.fsPath, 110 * 1024 * 1024, 'HugeAbort100');
+    filesToCleanup.push(file);
+
+    const provider = new CrossFileSearchProvider();
+    const controller = new AbortController();
+    const start = Date.now();
+    const searchPromise = provider.searchWorkspace({ mode: 'contains', name: 'HugeAbort100' }, undefined, controller.signal);
+
+    setTimeout(() => controller.abort(), 25);
+
+    await assert.rejects(searchPromise, /Search was cancelled/);
+    const elapsed = Date.now() - start;
+    console.log(`CrossFileSearchProvider stress abort elapsed=${elapsed}ms`);
+    assert.ok(elapsed < 15000, `expected cancellation to finish promptly, elapsed=${elapsed}ms`);
+    provider.dispose();
+  });
 });
 
 async function writeLargeArxmlFile(filePath: string, minBytes: number, markerName: string): Promise<void> {
